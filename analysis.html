@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Progress Analysis | DEADRYX</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+  <script src="shared.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <div class="app-shell analysis-shell">
+
+    <!-- Mobile Header -->
+    <header class="mobile-header">
+      <div class="brand" style="margin:0;">
+        <div class="brand-mark" style="width: 38px; height: 38px; font-size: 0.9rem; border-radius: 10px;">
+          <img src="logo.png" alt="DEADRYX Logo">
+        </div>
+        <div>
+          <p class="brand-name" style="font-size: 1.1rem;">DEADRYX</p>
+        </div>
+      </div>
+      <div class="header-actions-group">
+        <button class="theme-toggle-btn" aria-label="Toggle theme"></button>
+        <button id="mobileMenuBtn" class="hamburger-btn">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Sidebar Overlay -->
+    <div id="sidebarOverlay" class="sidebar-overlay"></div>
+
+    <aside class="sidebar analysis-sidebar" id="appSidebar">
+      <div class="brand">
+        <div class="brand-mark">
+          <img src="logo.png" alt="DEADRYX Logo">
+        </div>
+        <div style="flex: 1;">
+          <p class="brand-name">DEADRYX</p>
+          <p class="brand-subtitle">Strength dashboard</p>
+        </div>
+        <button class="theme-toggle-btn" aria-label="Toggle theme"></button>
+      </div>
+
+      <section class="panel quick-panel">
+        <p class="panel-kicker">Analysis Mode</p>
+        <h1>Progress Graph</h1>
+        <p class="panel-copy">
+          Track your maximum weight lifted over time. Compare your recent progress this year against your lifetime achievements.
+        </p>
+        <button class="primary-btn mt-4" onclick="window.location.href='index.html'">
+          &larr; Back to Tracker
+        </button>
+      </section>
+    </aside>
+
+    <main class="main-content">
+      <section class="panel day-panel">
+        <div class="section-head">
+          <div>
+            <p class="panel-kicker">Performance</p>
+            <h2 id="exerciseTitle">Exercise Analysis</h2>
+          </div>
+          <div class="toggle-group">
+            <button class="toggle-btn active" id="btnThisYear">This Year</button>
+            <button class="toggle-btn" id="btnLifetime">Lifetime</button>
+          </div>
+        </div>
+
+        <div class="target-panel" id="targetPanel">
+          <div class="target-inputs">
+            <div class="input-group">
+              <label>Target Weight (kg)</label>
+              <input type="number" id="targetWeight" placeholder="e.g. 100" class="field-input">
+            </div>
+            <div class="input-group">
+              <label>Deadline Date</label>
+              <div style="position: relative; display: flex; align-items: center;">
+                <input type="text" id="targetDate" placeholder="e.g. 25 Dec 2026" class="field-input" style="letter-spacing: 0.03em; padding-right: 2.8rem;">
+                <button type="button" id="calendarPickerBtn" style="position: absolute; right: 0.6rem; background: none; border: none; cursor: pointer; font-size: 1.2rem; opacity: 0.7; transition: opacity 0.2s;" title="Pick from calendar">📅</button>
+                <input type="date" id="hiddenDatePicker" style="position: absolute; right: 0.6rem; top: 50%; opacity: 0; width: 0; height: 0; pointer-events: none;">
+              </div>
+            </div>
+          </div>
+          <button id="saveTargetBtn" class="primary-btn lock-btn">Lock Target</button>
+        </div>
+
+        <div class="chart-container">
+          <canvas id="progressChart"></canvas>
+        </div>
+
+        <p class="empty-note" id="emptyState" style="display: none;">No historical data available for this exercise yet. Complete and save a workout to see your progress!</p>
+      </section>
+    </main>
+  </div>
+
+  <script src="analysis.js"></script>
+</body>
+</html>
