@@ -11,7 +11,7 @@ Traditional fitness apps require expensive monthly subscriptions, force account 
 
 **DEADRYX solves these pain points by using a serverless client-side architecture:**
 * **Zero Hosting & DB Costs:** All calculations, chart rendering, and data storage occur locally on the user's device. No database server is required.
-* **100% Privacy-First:** User data (workouts, weight metrics, personal memories) is never processed by a third party.
+* **100% Privacy-First:** User data (workouts, weight metrics, personal memories) is stored exclusively on the user's device. Developers and servers have zero access to any user data — ever.
 * **Cross-Device Sync:** Seamless synchronization across mobile and desktop devices using the user's personal Google Drive file storage.
 
 ---
@@ -62,11 +62,14 @@ Traditional fitness apps require expensive monthly subscriptions, force account 
      - *Carbohydrates:* Calculates remaining calorie allotment divided by 4.
 
 ### 6. Media memories Timeline
-* **Feature:** An aesthetic photo/video diary keeping track of physical transformations.
+* **Feature:** An aesthetic photo/video diary keeping track of physical transformations, with real-time upload feedback and full-screen viewing.
 * **How It Works:**
   1. Photos and video clips are stored locally on the client's device using browser-native **IndexedDB** (`MemoriesDB`), bypassing standard local storage size caps (5MB) to handle large media files.
   2. Media metadata maps are synced through Google Drive to retrieve filenames and sync states.
   3. Downloads and updates missing images from the user's `DEADRYX_Memories` Drive folder in the background.
+  4. **Upload Status Toast:** A premium animated toast notification system tracks the entire upload lifecycle — showing a spinning loader with file name/size during processing, transitioning to an animated checkmark on success, or displaying an error state with details if something fails. The toast auto-dismisses after 3.5 seconds.
+  5. **Full-Screen Lightbox:** Clicking any image opens a blurred-backdrop fullscreen overlay displaying the photo at its original resolution and aspect ratio. Includes a close button, date badge, Escape-key dismiss, and smooth scale-in animation. Videos open in a lightbox with autoplay controls.
+  6. **Original-Size Display:** Images render at their full original aspect ratio in the timeline grid cards (via `object-fit: contain`), ensuring no cropping of progress photos.
 
 ---
 
@@ -102,7 +105,7 @@ Below is the layout of the project's codebase, outlining the exact purpose of ev
 | **`index.html`** | HTML5 / CSS | Main dashboard landing page. Houses the workout calendar, exercise logging forms, activity summary, and sidebar controls. |
 | **`notes.html`** | HTML5 / CSS | Page designed for capturing exercise notes, target muscles, seat heights, and gym form cues. |
 | **`analysis.html`** | HTML5 / CSS | Dedicated page for lift metrics and progression charts (`Chart.js`). |
-| **`memories.html`** | HTML5 / CSS | Progress photo & video gallery page with visual timeline layouts. |
+| **`memories.html`** | HTML5 / CSS | Progress photo & video gallery page with visual timeline layouts, upload status toast, and full-screen image lightbox. |
 | **`styles.css`** | CSS3 | Global design stylesheet. Houses the custom dark-theme variables, glassmorphism containers, layouts, buttons, and visual animations. |
 | **`shared.js`** | JavaScript | Loaded globally across **all** pages first. Manages theme controls, global backup lists, custom PR toast builders, and the consolidated sync trigger (`triggerSync`). |
 | **`script.js`** | JavaScript | Core engine for the home dashboard. Runs the calendar, logs exercise sets, populates splits, and registers custom exercises. |
@@ -120,3 +123,5 @@ During our recent engineering cycle, we successfully upgraded the synchronizatio
 1. **DRY Refactoring (`triggerSync`):** Consolidate 8 separate repeated blocks of sync checks into a single global, lightweight wrapper. This significantly reduced overall bundle size and decreased script parsing times.
 2. **Graceful Fault Tolerance:** Embedded fail-safes so that pages will never crash due to network failures or slow Google CDN load speeds.
 3. **Multi-Page Consistency:** Standardized script initialization on notes, memories, and charts, allowing active cloud syncs to run in the background as single-page sessions.
+4. **Memories Upload UX Overhaul:** Replaced basic `alert()` dialogs with an animated toast notification system featuring a spinner during upload, animated SVG checkmark on success, and error state display. Added a premium full-screen lightbox for viewing progress photos at original resolution with blurred backdrop, smooth scale animation, and keyboard dismiss support.
+5. **Original-Size Media Rendering:** Timeline cards now display images at their full natural aspect ratio (`object-fit: contain`) instead of cropping them, ensuring physique progress is captured accurately.
