@@ -4,6 +4,12 @@ const DB_NAME = "FitnessMemoriesDB";
 const DB_VERSION = 1;
 const STORE_NAME = "mediaStore";
 
+// Size limits
+const MAX_IMAGE_SIZE_MB = 8;
+const MAX_VIDEO_SIZE_MB = 25;
+const MAX_IMAGE_SIZE = MAX_IMAGE_SIZE_MB * 1024 * 1024;
+const MAX_VIDEO_SIZE = MAX_VIDEO_SIZE_MB * 1024 * 1024;
+
 let db;
 
 const initDB = () => {
@@ -30,20 +36,38 @@ const initDB = () => {
   });
 };
 
-const saveMedia = (file) => {
+/**
+ * Save media to IndexedDB.
+ * Accepts either a raw File object or a pre-built media object (from Drive download).
+ * Pre-built objects must have: { file, type, timestamp, dateStr }
+ */
+const saveMedia = (fileOrObj) => {
   return new Promise((resolve, reject) => {
     const transaction = db.transaction([STORE_NAME], "readwrite");
     const store = transaction.objectStore(STORE_NAME);
 
-    const mediaObj = {
-      file: file,
-      type: file.type.startsWith('video') ? 'video' : 'image',
-      timestamp: new Date().getTime(),
-      dateStr: new Date().toLocaleString(undefined, {
-        month: 'short', day: 'numeric', year: 'numeric',
-        hour: '2-digit', minute: '2-digit'
-      })
-    };
+    let mediaObj;
+
+    // If it's a pre-built object (from Drive sync), use it directly
+    if (fileOrObj.timestamp && fileOrObj.dateStr && fileOrObj.type) {
+      mediaObj = {
+        file: fileOrObj.file,
+        type: fileOrObj.type,
+        timestamp: fileOrObj.timestamp,
+        dateStr: fileOrObj.dateStr
+      };
+    } else {
+      // It's a raw File object from user upload
+      mediaObj = {
+        file: fileOrObj,
+        type: fileOrObj.type.startsWith('video') ? 'video' : 'image',
+        timestamp: new Date().getTime(),
+        dateStr: new Date().toLocaleString(undefined, {
+          month: 'short', day: 'numeric', year: 'numeric',
+          hour: '2-digit', minute: '2-digit'
+        })
+      };
+    }
 
     const request = store.add(mediaObj);
 
@@ -104,6 +128,14 @@ const renderTimeline = async () => {
   }
 };
 
+// Expose DB functions globally so gdrive-sync.js can access them
+window.MemoriesDB = {
+  initDB,
+  saveMedia,
+  getAllMedia,
+  renderTimeline
+};
+
 document.addEventListener("DOMContentLoaded", async () => {
   try {
     await initDB();
@@ -124,6 +156,17 @@ document.addEventListener("DOMContentLoaded", async () => {
         return;
       }
 
+      // File size validation
+      const isVideo = file.type.startsWith('video');
+      const maxSize = isVideo ? MAX_VIDEO_SIZE : MAX_IMAGE_SIZE;
+      const maxSizeMB = isVideo ? MAX_VIDEO_SIZE_MB : MAX_IMAGE_SIZE_MB;
+
+      if (file.size > maxSize) {
+        alert(`File too large! Maximum size for ${isVideo ? 'videos' : 'images'} is ${maxSizeMB} MB.\nYour file: ${(file.size / (1024 * 1024)).toFixed(1)} MB.`);
+        uploadInput.value = '';
+        return;
+      }
+
       const btn = document.querySelector('button[onclick*="mediaUpload"]');
       const originalText = btn ? btn.innerText : '';
       if (btn) {
@@ -134,6 +177,11 @@ document.addEventListener("DOMContentLoaded", async () => {
       try {
         await saveMedia(file);
         await renderTimeline();
+
+        // Trigger Google Drive upload if connected
+        if (typeof window.uploadMemoriesToDrive === 'function') {
+          window.uploadMemoriesToDrive();
+        }
       } catch (err) {
         console.error("Failed to save media", err);
         alert("Failed to save media. It might be too large or there might be an issue with storage.");

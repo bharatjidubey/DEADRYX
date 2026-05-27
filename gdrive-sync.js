@@ -10,8 +10,10 @@ let tokenClient;
 let gapiInited = false;
 let gisInited = false;
 let syncFileId = null;
+let memoriesFolderId = null;
 
 const SYNC_FILENAME = "deadryx_sync_data.json";
+const MEMORIES_FOLDER_NAME = "DEADRYX_Memories";
 
 function gapiLoaded() {
   gapi.load('client', intializeGapiClient);
@@ -108,6 +110,7 @@ function handleSignoutClick() {
 
     updateSyncStatus("Disconnected");
     syncFileId = null;
+    memoriesFolderId = null;
   }
 }
 
@@ -184,7 +187,8 @@ function getDriveStructuredData() {
     "deadryx-targets-v1",
     "deadryx-notes-v1",
     "deadryx-pr-records-v1",
-    "deadryx-theme-v1"
+    "deadryx-theme-v1",
+    "deadryx-media-sync-v1"
   ];
 
   BACKUP_KEYS.forEach(k => {
@@ -245,6 +249,218 @@ async function findSyncFile() {
   }
 }
 
+// ================== MEMORIES MEDIA SYNC ==================
+
+/**
+ * Find or create the DEADRYX_Memories folder in Google Drive.
+ */
+async function getOrCreateMemoriesFolder() {
+  if (memoriesFolderId) return memoriesFolderId;
+
+  try {
+    // Search for existing folder
+    const response = await gapi.client.drive.files.list({
+      q: `name='${MEMORIES_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+      fields: 'files(id, name)',
+      spaces: 'drive'
+    });
+
+    const files = response.result.files;
+    if (files && files.length > 0) {
+      memoriesFolderId = files[0].id;
+      return memoriesFolderId;
+    }
+
+    // Create the folder
+    const createRes = await gapi.client.drive.files.create({
+      resource: {
+        name: MEMORIES_FOLDER_NAME,
+        mimeType: 'application/vnd.google-apps.folder'
+      },
+      fields: 'id'
+    });
+
+    memoriesFolderId = createRes.result.id;
+    return memoriesFolderId;
+  } catch (err) {
+    console.error("Error getting/creating memories folder", err);
+    return null;
+  }
+}
+
+/**
+ * Get the media sync map from localStorage.
+ * Maps: { "timestamp": { driveFileId, type, dateStr, fileName } }
+ */
+function getMediaSyncMap() {
+  try {
+    return JSON.parse(localStorage.getItem("deadryx-media-sync-v1")) || {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function saveMediaSyncMap(map) {
+  localStorage.setItem("deadryx-media-sync-v1", JSON.stringify(map));
+}
+
+/**
+ * Upload all un-synced local memories to Google Drive.
+ */
+async function uploadMemoriesToDrive() {
+  if (!gapi.client.getToken()) return;
+  if (!window.MemoriesDB) {
+    console.warn("MemoriesDB not available yet. Skipping media upload.");
+    return;
+  }
+
+  try {
+    const folderId = await getOrCreateMemoriesFolder();
+    if (!folderId) return;
+
+    const allMedia = await window.MemoriesDB.getAllMedia();
+    const syncMap = getMediaSyncMap();
+    let uploaded = 0;
+
+    for (const item of allMedia) {
+      const tsKey = String(item.timestamp);
+
+      // Skip if already synced
+      if (syncMap[tsKey]) continue;
+
+      try {
+        const ext = item.type === 'video' ? 'mp4' : (item.file.type === 'image/png' ? 'png' : 'jpg');
+        const fileName = `memory_${tsKey}.${ext}`;
+
+        const metadata = {
+          name: fileName,
+          parents: [folderId],
+          mimeType: item.file.type
+        };
+
+        const form = new FormData();
+        form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+        form.append('file', item.file);
+
+        const res = await fetch(
+          'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id',
+          {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + gapi.client.getToken().access_token },
+            body: form
+          }
+        );
+
+        if (res.ok) {
+          const data = await res.json();
+          syncMap[tsKey] = {
+            driveFileId: data.id,
+            type: item.type,
+            dateStr: item.dateStr,
+            fileName: fileName,
+            mimeType: item.file.type
+          };
+          uploaded++;
+        } else {
+          console.error("Failed to upload memory:", fileName, res.status);
+        }
+      } catch (uploadErr) {
+        console.error("Error uploading memory:", tsKey, uploadErr);
+      }
+    }
+
+    if (uploaded > 0) {
+      saveMediaSyncMap(syncMap);
+      console.log(`Uploaded ${uploaded} memories to Google Drive.`);
+      // Also update the main sync file so the sync map is backed up
+      await uploadToDriveInternal();
+    }
+  } catch (err) {
+    console.error("Error in uploadMemoriesToDrive:", err);
+  }
+}
+
+// Expose globally so memories.js can trigger it
+window.uploadMemoriesToDrive = uploadMemoriesToDrive;
+
+/**
+ * Download memories from Google Drive that are missing locally.
+ */
+async function downloadMemoriesFromDrive() {
+  if (!gapi.client.getToken()) return;
+  if (!window.MemoriesDB) {
+    console.warn("MemoriesDB not available yet. Skipping media download.");
+    return;
+  }
+
+  try {
+    const syncMap = getMediaSyncMap();
+    const syncedTimestamps = Object.keys(syncMap);
+
+    if (syncedTimestamps.length === 0) return;
+
+    // Get all local media timestamps to see what's missing
+    const localMedia = await window.MemoriesDB.getAllMedia();
+    const localTimestamps = new Set(localMedia.map(m => String(m.timestamp)));
+
+    let downloaded = 0;
+
+    for (const tsKey of syncedTimestamps) {
+      // Skip if already exists locally
+      if (localTimestamps.has(tsKey)) continue;
+
+      const syncEntry = syncMap[tsKey];
+
+      try {
+        // Download the file content from Drive
+        const res = await fetch(
+          `https://www.googleapis.com/drive/v3/files/${syncEntry.driveFileId}?alt=media`,
+          {
+            headers: { 'Authorization': 'Bearer ' + gapi.client.getToken().access_token }
+          }
+        );
+
+        if (res.ok) {
+          const blob = await res.blob();
+          // Reconstruct the file as a Blob with the correct MIME type
+          const file = new Blob([blob], { type: syncEntry.mimeType || (syncEntry.type === 'video' ? 'video/mp4' : 'image/jpeg') });
+
+          // Save to IndexedDB with original timestamp and date string
+          await window.MemoriesDB.saveMedia({
+            file: file,
+            type: syncEntry.type,
+            timestamp: parseInt(tsKey),
+            dateStr: syncEntry.dateStr
+          });
+
+          downloaded++;
+        } else if (res.status === 404) {
+          // File was deleted from Drive, remove from sync map
+          console.warn("Memory file not found on Drive, removing from sync map:", syncEntry.fileName);
+          delete syncMap[tsKey];
+        } else {
+          console.error("Failed to download memory:", syncEntry.fileName, res.status);
+        }
+      } catch (dlErr) {
+        console.error("Error downloading memory:", tsKey, dlErr);
+      }
+    }
+
+    if (downloaded > 0) {
+      saveMediaSyncMap(syncMap);
+      console.log(`Downloaded ${downloaded} memories from Google Drive.`);
+      // Re-render the timeline if available
+      if (window.MemoriesDB.renderTimeline) {
+        await window.MemoriesDB.renderTimeline();
+      }
+    }
+  } catch (err) {
+    console.error("Error in downloadMemoriesFromDrive:", err);
+  }
+}
+
+// ================== MAIN SYNC FUNCTIONS ==================
+
 async function fetchAndSyncFromDrive() {
   updateSyncStatus("Syncing...");
   try {
@@ -261,12 +477,60 @@ async function fetchAndSyncFromDrive() {
       // Refresh UI if functions are available
       if (typeof renderCalendar === 'function') renderCalendar();
       if (typeof updateStatsPanels === 'function') updateStatsPanels();
+
+      // Download any memories from Drive that are missing locally
+      await downloadMemoriesFromDrive();
     } else {
       updateSyncStatus("No cloud data. Will create on save.");
     }
   } catch (err) {
     console.error(err);
     updateSyncStatus("Sync Error");
+  }
+}
+
+/**
+ * Internal upload function that doesn't trigger media sync (to avoid infinite loop).
+ */
+async function uploadToDriveInternal() {
+  if (!gapi.client.getToken()) return;
+
+  try {
+    const fileContent = JSON.stringify(getDriveStructuredData(), null, 2);
+    const file = new Blob([fileContent], { type: 'application/json' });
+    const metadata = {
+      name: SYNC_FILENAME,
+      mimeType: 'application/json'
+    };
+
+    let url = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
+    let method = 'POST';
+
+    if (!syncFileId) {
+      syncFileId = await findSyncFile();
+    }
+
+    if (syncFileId) {
+      url = `https://www.googleapis.com/upload/drive/v3/files/${syncFileId}?uploadType=multipart`;
+      method = 'PATCH';
+    }
+
+    const form = new FormData();
+    form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+    form.append('file', file);
+
+    const res = await fetch(url, {
+      method: method,
+      headers: new Headers({ 'Authorization': 'Bearer ' + gapi.client.getToken().access_token }),
+      body: form
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      syncFileId = data.id;
+    }
+  } catch (err) {
+    console.error("uploadToDriveInternal error:", err);
   }
 }
 
@@ -308,6 +572,9 @@ async function uploadToDrive() {
       const data = await res.json();
       syncFileId = data.id;
       updateSyncStatus("Synced: " + new Date().toLocaleTimeString());
+
+      // Also upload any un-synced memories
+      await uploadMemoriesToDrive();
     } else {
       updateSyncStatus("Upload Error");
     }
