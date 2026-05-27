@@ -42,6 +42,7 @@
 
 html {
   scroll-behavior: smooth;
+  zoom: 0.75;
 }
 
 body {
@@ -381,8 +382,7 @@ input {
 .calendar-panel,
 .selected-day-panel,
 .attendance-panel,
-.day-panel,
-.about-panel {
+.day-panel {
   padding: 1.5rem;
 }
 
@@ -1440,8 +1440,8 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
   }
 }
 
-/* Large Desktop Split View for Exercises */
-@media (min-width: 1300px) {
+/* Desktop Split View for Exercises */
+@media (min-width: 1024px) {
   .exercise-list {
     grid-template-columns: 1fr 1fr;
     align-items: start;
@@ -1462,6 +1462,13 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
   border-top: 1px solid rgba(96, 165, 250, 0.15);
   position: relative;
   overflow: hidden;
+  margin: 4.5rem -1.5rem -1.5rem -1.5rem;
+  padding: 1.8rem 1.5rem 1.5rem 1.5rem;
+  background: linear-gradient(180deg, var(--panel) 0%, var(--bg-soft) 100%);
+  border-radius: 0;
+  opacity: 0;
+  transform: translateY(18px);
+  animation: fadeInUp 0.5s ease forwards 0.4s;
 }
 
 .about-panel::before {
