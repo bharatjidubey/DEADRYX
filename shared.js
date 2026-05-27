@@ -23,6 +23,14 @@ function applyTheme(theme) {
 function toggleTheme() {
   const current = loadTheme();
   applyTheme(current === "dark" ? "light" : "dark");
+  triggerSync();
+}
+
+function triggerSync() {
+  updateLastWriteTime();
+  if (typeof uploadToDrive === "function") {
+    uploadToDrive().catch(e => console.error("Drive upload failed", e));
+  }
 }
 
 // Apply theme as early as possible to avoid flash
@@ -39,8 +47,16 @@ const BACKUP_KEYS = [
   "deadryx-targets-v1",
   "deadryx-notes-v1",
   "deadryx-pr-records-v1",
+  "deadryx-bmi-history-v1",
+  "deadryx-bmi-profile-v1",
+  "deadryx-bmi-target-v1",
+  "deadryx-last-write-v1",
   THEME_KEY
 ];
+
+function updateLastWriteTime() {
+  localStorage.setItem("deadryx-last-write-v1", new Date().toISOString());
+}
 
 function exportAllData() {
   const data = {

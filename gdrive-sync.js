@@ -81,8 +81,11 @@ function handleAuthClick() {
       expires_at: Date.now() + (resp.expires_in * 1000)
     }));
 
-    document.getElementById("gdriveConnectBtn").style.display = "none";
-    document.getElementById("gdriveDisconnectBtn").style.display = "inline-flex";
+    const connectBtn = document.getElementById("gdriveConnectBtn");
+    if (connectBtn) connectBtn.style.display = "none";
+    const disconnectBtn = document.getElementById("gdriveDisconnectBtn");
+    if (disconnectBtn) disconnectBtn.style.display = "inline-flex";
+
     updateSyncStatus("Connected");
     await fetchUserInfo();
     await fetchAndSyncFromDrive();
@@ -101,8 +104,11 @@ function handleSignoutClick() {
     google.accounts.oauth2.revoke(token.access_token);
     gapi.client.setToken('');
     localStorage.removeItem("gdrive_access_token");
-    document.getElementById("gdriveConnectBtn").style.display = "inline-flex";
-    document.getElementById("gdriveDisconnectBtn").style.display = "none";
+
+    const connectBtn = document.getElementById("gdriveConnectBtn");
+    if (connectBtn) connectBtn.style.display = "inline-flex";
+    const disconnectBtn = document.getElementById("gdriveDisconnectBtn");
+    if (disconnectBtn) disconnectBtn.style.display = "none";
 
     // Hide profile info
     const profileDiv = document.getElementById("gdriveProfileInfo");
@@ -124,13 +130,17 @@ async function fetchUserInfo() {
       const profileDiv = document.getElementById("gdriveProfileInfo");
       if (profileDiv) {
         profileDiv.style.display = "flex";
-        document.getElementById("gdriveProfileName").textContent = data.name || "User";
-        if (data.picture) {
-          document.getElementById("gdriveProfilePic").src = data.picture;
+        const profileName = document.getElementById("gdriveProfileName");
+        if (profileName) profileName.textContent = data.name || "User";
+        const profilePic = document.getElementById("gdriveProfilePic");
+        if (profilePic && data.picture) {
+          profilePic.src = data.picture;
         }
       }
-      document.getElementById("gdriveConnectBtn").style.display = "none";
-      document.getElementById("gdriveDisconnectBtn").style.display = "inline-flex";
+      const connectBtn = document.getElementById("gdriveConnectBtn");
+      if (connectBtn) connectBtn.style.display = "none";
+      const disconnectBtn = document.getElementById("gdriveDisconnectBtn");
+      if (disconnectBtn) disconnectBtn.style.display = "inline-flex";
     }
   } catch (err) {
     console.error("Failed to fetch user info", err);
@@ -188,7 +198,11 @@ function getDriveStructuredData() {
     "deadryx-notes-v1",
     "deadryx-pr-records-v1",
     "deadryx-theme-v1",
-    "deadryx-media-sync-v1"
+    "deadryx-media-sync-v1",
+    "deadryx-bmi-history-v1",
+    "deadryx-bmi-profile-v1",
+    "deadryx-bmi-target-v1",
+    "deadryx-last-write-v1"
   ];
 
   BACKUP_KEYS.forEach(k => {
@@ -196,8 +210,12 @@ function getDriveStructuredData() {
     if (val) appState[k] = val;
   });
 
+  const syncTime = new Date().toISOString();
+  localStorage.setItem("deadryx-last-write-v1", syncTime);
+  appState["deadryx-last-write-v1"] = syncTime;
+
   return {
-    _meta: { version: 1, lastSync: new Date().toISOString() },
+    _meta: { version: 1, lastSync: syncTime },
     workoutData: structured,
     _appState: appState
   };
@@ -471,15 +489,31 @@ async function fetchAndSyncFromDrive() {
         alt: 'media'
       });
       const data = response.result;
-      processDriveDataAndSaveLocal(data);
-      updateSyncStatus("Synced: " + new Date().toLocaleTimeString());
+      
+      // Conflict check: Last-Write-Wins
+      const localWriteTime = localStorage.getItem("deadryx-last-write-v1");
+      const cloudSyncTime = data?._meta?.lastSync;
+      
+      if (localWriteTime && cloudSyncTime && new Date(localWriteTime) > new Date(cloudSyncTime)) {
+        console.log("Local changes are newer than Drive. Uploading instead of downloading.");
+        await performUploadToDrive();
+      } else {
+        processDriveDataAndSaveLocal(data);
+        updateSyncStatus("Synced: " + new Date().toLocaleTimeString());
 
-      // Refresh UI if functions are available
-      if (typeof renderCalendar === 'function') renderCalendar();
-      if (typeof updateStatsPanels === 'function') updateStatsPanels();
+        // Refresh UI if functions are available on the current page
+        if (typeof renderCalendar === 'function') renderCalendar();
+        if (typeof renderSidebarSplit === 'function') renderSidebarSplit();
+        if (typeof renderWorkoutDay === 'function') renderWorkoutDay();
+        if (typeof renderAttendance === 'function') renderAttendance();
+        if (typeof renderBMIPanel === 'function') renderBMIPanel();
+        if (typeof initNotes === 'function') initNotes();
+        if (typeof renderChart === 'function') renderChart(typeof currentViewMode !== 'undefined' ? currentViewMode : "thisYear");
+        if (typeof updateStatsPanels === 'function') updateStatsPanels();
 
-      // Download any memories from Drive that are missing locally
-      await downloadMemoriesFromDrive();
+        // Download any memories from Drive that are missing locally
+        await downloadMemoriesFromDrive();
+      }
     } else {
       updateSyncStatus("No cloud data. Will create on save.");
     }
@@ -534,9 +568,23 @@ async function uploadToDriveInternal() {
   }
 }
 
+let debounceUploadTimeout = null;
+
 async function uploadToDrive() {
   if (!gapi.client.getToken()) return; // Not logged in
 
+  updateSyncStatus("Sync pending...");
+
+  if (debounceUploadTimeout) {
+    clearTimeout(debounceUploadTimeout);
+  }
+
+  debounceUploadTimeout = setTimeout(async () => {
+    await performUploadToDrive();
+  }, 2500);
+}
+
+async function performUploadToDrive() {
   updateSyncStatus("Uploading...");
   try {
     const fileContent = JSON.stringify(getDriveStructuredData(), null, 2);
@@ -588,6 +636,6 @@ async function uploadToDrive() {
 window.addEventListener('online', () => {
   if (localStorage.getItem("gdrive_access_token") && gapi.client && gapi.client.getToken()) {
     console.log("Internet reconnected. Syncing to Drive...");
-    uploadToDrive();
+    fetchAndSyncFromDrive();
   }
 });

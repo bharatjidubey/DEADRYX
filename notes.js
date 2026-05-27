@@ -29,6 +29,7 @@ function saveNotes() {
   const allNotes = loadNotes();
   allNotes[exerciseName] = notesArea.value;
   localStorage.setItem(NOTES_KEY, JSON.stringify(allNotes));
+  triggerSync();
 
   saveIndicator.textContent = "Saved";
   saveIndicator.className = "save-indicator visible saved";

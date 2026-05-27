@@ -3,10 +3,6 @@ const BMI_HISTORY_KEY = "deadryx-bmi-history-v1";
 const BMI_PROFILE_KEY = "deadryx-bmi-profile-v1";
 const BMI_TARGET_KEY = "deadryx-bmi-target-v1";
 
-// Extend backup keys if shared.js is present
-if (typeof BACKUP_KEYS !== "undefined") {
-  BACKUP_KEYS.push(BMI_HISTORY_KEY, BMI_PROFILE_KEY, BMI_TARGET_KEY);
-}
 
 // ============ STORAGE ============
 function loadBMIHistory() {
@@ -501,6 +497,7 @@ function attachBMIHandlers() {
       else history.push(entry);
 
       saveBMIHistory(history);
+      triggerSync();
       renderBMIPanel();
     });
   }
@@ -509,6 +506,7 @@ function attachBMIHandlers() {
     clearBtn.addEventListener("click", () => {
       if (confirm("Delete all BMI history? This cannot be undone.")) {
         saveBMIHistory([]);
+        triggerSync();
         renderBMIPanel();
       }
     });

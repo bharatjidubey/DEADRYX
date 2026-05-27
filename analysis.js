@@ -366,6 +366,7 @@ saveTargetBtn.addEventListener("click", () => {
   if (!targets[exerciseName]) targets[exerciseName] = {};
   targets[exerciseName][currentViewMode] = { weight: w, deadline: d };
   saveTargets(targets);
+  triggerSync();
 
   renderTargetBlock();
   renderChart(currentViewMode);

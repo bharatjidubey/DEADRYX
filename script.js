@@ -382,9 +382,7 @@ function saveWorkout() {
   if (typeof renderStats === "function") renderStats();
 
   // Trigger Google Drive Cloud Sync
-  if (typeof uploadToDrive === "function") {
-    uploadToDrive().catch(e => console.error("Drive upload failed", e));
-  }
+  triggerSync();
 }
 
 if (saveWorkoutBtn) {
@@ -542,6 +540,7 @@ if (openAddExerciseBtn && addExerciseModal) {
     });
 
     persistCustomExercises();
+    triggerSync();
     addExerciseModal.classList.remove("active");
     saveMessage.textContent = "Custom exercise added!";
     saveMessage.style.color = "var(--green)";
@@ -606,6 +605,7 @@ if (openEditSplitBtn && editSplitModal) {
 
     workoutPlan = newPlan;
     persistWorkoutPlan();
+    triggerSync();
 
     editSplitModal.classList.remove("active");
     saveMessage.textContent = "Your weekly split has been updated!";
@@ -777,6 +777,7 @@ if (toggleDeleteModeBtn) {
           persistHiddenExercises();
         }
       }
+      triggerSync();
       renderWorkoutDay();
       saveMessage.textContent = `'${exName}' has been removed.`;
       saveMessage.style.color = "var(--red)";
