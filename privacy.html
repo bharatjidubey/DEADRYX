@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0b0f16" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" type="image/png" href="favicon.png" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+  <title>Privacy Policy | DEADRYX - Workout Tracker</title>
+  <meta name="description" content="DEADRYX Privacy Policy. Your data stays on your device. We respect your privacy — no tracking, no ads, no data collection." />
+  <meta name="robots" content="index, follow" />
+  <link rel="canonical" href="https://deadryx.netlify.app/privacy.html" />
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="Privacy Policy | DEADRYX" />
+  <meta property="og:description" content="DEADRYX Privacy Policy. Your data stays on your device. We respect your privacy." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://deadryx.netlify.app/privacy.html" />
+  <meta property="og:site_name" content="DEADRYX" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+  <script src="shared.js" defer></script>
+</head>
+<body>
+  <div class="app-shell analysis-shell">
+
+    <!-- Mobile Header -->
+    <header class="mobile-header">
+      <div class="brand" style="margin:0;">
+        <div class="brand-mark" style="width: 38px; height: 38px; border-radius: 10px;">
+          <img src="logo.png" alt="DEADRYX Logo" width="38" height="38" loading="eager">
+        </div>
+        <div><p class="brand-name" style="font-size: 1.1rem;">DEADRYX</p></div>
+      </div>
+      <div class="header-actions-group">
+        <button class="theme-toggle-btn" aria-label="Toggle theme"></button>
+        <button id="mobileMenuBtn" class="hamburger-btn">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Sidebar Overlay -->
+    <div id="sidebarOverlay" class="sidebar-overlay"></div>
+
+    <aside class="sidebar analysis-sidebar" id="appSidebar">
+      <div class="brand">
+        <div class="brand-mark"><img src="logo.png" alt="DEADRYX Logo" width="48" height="48" loading="eager"></div>
+        <div style="flex: 1;">
+          <p class="brand-name">DEADRYX</p>
+          <p class="brand-subtitle">Strength dashboard</p>
+        </div>
+        <button class="theme-toggle-btn" aria-label="Toggle theme"></button>
+      </div>
+
+      <section class="panel quick-panel">
+        <p class="panel-kicker">Legal</p>
+        <h1>Privacy Policy</h1>
+        <p class="panel-copy">
+          We value your data. Everything stays on your device — no tracking, no ads.
+        </p>
+        <button class="primary-btn mt-4" onclick="window.location.href='index.html'">
+          &larr; Back to Tracker
+        </button>
+      </section>
+    </aside>
+
+    <main class="main-content">
+      <section class="panel day-panel" style="line-height: 1.8;">
+        <div class="section-head">
+          <div>
+            <p class="panel-kicker">Legal</p>
+            <h2>Privacy Policy</h2>
+          </div>
+        </div>
+
+        <p class="muted-text" style="margin-bottom: 1.5rem;">Last updated: May 26, 2026</p>
+
+        <article style="max-width: 720px;">
+          <h3 style="color: var(--green); margin-top: 0;">1. Introduction</h3>
+          <p>Welcome to <strong>DEADRYX</strong>. This privacy policy explains how we handle your information when you use our workout tracking application.</p>
+
+          <h3 style="color: var(--green);">2. Data Collection</h3>
+          <p>DEADRYX is an <strong>offline-first</strong> application. We do <strong>not</strong> collect, store, or transmit any personal data to our servers. All workout data, attendance records, exercise logs, BMI data, notes, and progress photos are stored <strong>exclusively in your web browser's local storage</strong> on your own device.</p>
+
+          <h3 style="color: var(--green);">3. Google Drive Sync (Optional)</h3>
+          <p>If you choose to use the optional Google Drive sync feature, the app will:</p>
+          <ul style="color: var(--muted); padding-left: 1.5rem;">
+            <li>Request permission to access your Google Drive via Google's OAuth 2.0 flow.</li>
+            <li>Store a single JSON file (<code style="color: var(--blue);">deadryx_sync_data.json</code>) in your personal Google Drive account.</li>
+            <li>Access your basic profile information (name and profile picture) solely for display purposes within the app.</li>
+          </ul>
+          <p>We never access any other files on your Google Drive. Your Google credentials are handled entirely by Google's secure authentication system — we never see or store your password.</p>
+
+          <h3 style="color: var(--green);">4. Cookies & Tracking</h3>
+          <p>DEADRYX does <strong>not</strong> use cookies for tracking. We do <strong>not</strong> use any third-party analytics tools (no Google Analytics, no Facebook Pixel, etc.). The only browser storage used is <code style="color: var(--blue);">localStorage</code> to persist your workout data offline.</p>
+
+          <h3 style="color: var(--green);">5. Third-Party Services</h3>
+          <p>The following third-party services are loaded by the application:</p>
+          <ul style="color: var(--muted); padding-left: 1.5rem;">
+            <li><strong>Google Fonts</strong> — For typography (Inter font family). Subject to <a href="https://policies.google.com/privacy" style="color: var(--blue);" target="_blank" rel="noopener">Google's Privacy Policy</a>.</li>
+            <li><strong>Google APIs</strong> (optional) — Only loaded if you use the Google Drive sync feature.</li>
+            <li><strong>Chart.js</strong> (via jsDelivr CDN) — For rendering progress charts.</li>
+          </ul>
+
+          <h3 style="color: var(--green);">6. Data Security</h3>
+          <p>Since your data never leaves your device (unless you choose Google Drive sync), you have full control over your information. You can export all data as a JSON backup file at any time, and you can clear all data by clearing your browser's local storage.</p>
+
+          <h3 style="color: var(--green);">7. Children's Privacy</h3>
+          <p>DEADRYX is a general fitness tool. We do not knowingly collect any data from children under the age of 13.</p>
+
+          <h3 style="color: var(--green);">8. Changes to This Policy</h3>
+          <p>We may update this privacy policy from time to time. Any changes will be reflected on this page with an updated revision date.</p>
+
+          <h3 style="color: var(--green);">9. Contact</h3>
+          <p>If you have questions about this privacy policy, please contact:</p>
+          <p><a href="mailto:bharatjid021@gmail.com" style="color: var(--blue);">bharatjid021@gmail.com</a></p>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const mb = document.getElementById("mobileMenuBtn");
+    const sb = document.getElementById("appSidebar");
+    const ov = document.getElementById("sidebarOverlay");
+    if (mb && sb && ov) {
+      const t = () => { sb.classList.toggle("open"); ov.classList.toggle("active"); };
+      mb.addEventListener("click", t);
+      ov.addEventListener("click", t);
+    }
+  </script>
+</body>
+</html>

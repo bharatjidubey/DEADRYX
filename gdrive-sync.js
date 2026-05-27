@@ -316,3 +316,11 @@ async function uploadToDrive() {
     updateSyncStatus("Upload Error");
   }
 }
+
+// ================== AUTO-SYNC ON RECONNECT ==================
+window.addEventListener('online', () => {
+  if (localStorage.getItem("gdrive_access_token") && gapi.client && gapi.client.getToken()) {
+    console.log("Internet reconnected. Syncing to Drive...");
+    uploadToDrive();
+  }
+});

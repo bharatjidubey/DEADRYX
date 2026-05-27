@@ -142,8 +142,8 @@ function celebratePR(prData) {
     const duration = 2500;
     const end = Date.now() + duration;
     (function frame() {
-      confetti({ particleCount: 4, angle: 60, spread: 55, origin: { x: 0 }, colors: ['#36e28a', '#4da3ff', '#f5c95f'] });
-      confetti({ particleCount: 4, angle: 120, spread: 55, origin: { x: 1 }, colors: ['#36e28a', '#4da3ff', '#f5c95f'] });
+      confetti({ particleCount: 4, angle: 60, spread: 55, origin: { x: 0 }, colors: ['#60a5fa', '#34d399', '#fbbf24'] });
+      confetti({ particleCount: 4, angle: 120, spread: 55, origin: { x: 1 }, colors: ['#60a5fa', '#34d399', '#fbbf24'] });
       if (Date.now() < end) requestAnimationFrame(frame);
     }());
   }
@@ -176,4 +176,37 @@ document.addEventListener("DOMContentLoaded", () => {
     btn.addEventListener("click", toggleTheme);
   });
   applyTheme(loadTheme());
+});
+
+// ================== SERVICE WORKER REGISTRATION ==================
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js')
+      .then(registration => {
+        console.log('ServiceWorker registration successful with scope: ', registration.scope);
+      })
+      .catch(err => {
+        console.log('ServiceWorker registration failed: ', err);
+      });
+  });
+}
+
+// ================== STORAGE CONSENT WIRING ==================
+document.addEventListener("DOMContentLoaded", () => {
+  const consentBanner = document.getElementById("storageConsentBanner");
+  const acceptBtn = document.getElementById("acceptStorageBtn");
+
+  if (consentBanner && acceptBtn) {
+    if (!localStorage.getItem("deadryx_storage_consent")) {
+      // Small delay for smooth entry
+      setTimeout(() => {
+        consentBanner.classList.add("show");
+      }, 500);
+    }
+
+    acceptBtn.addEventListener("click", () => {
+      localStorage.setItem("deadryx_storage_consent", "true");
+      consentBanner.classList.remove("show");
+    });
+  }
 });

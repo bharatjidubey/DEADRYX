@@ -4,23 +4,89 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>DEADRYX | Workout Planner</title>
+  <meta name="theme-color" content="#0b0f16" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" type="image/png" href="favicon.png" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+  <title>DEADRYX | Free Workout Tracker & Gym Planner - Log Workouts Offline</title>
+  <meta name="description" content="DEADRYX is a free, offline-first workout tracker and gym planner. Log your lifts, track personal records, visualize progress with charts, and sync to Google Drive. No ads, no subscriptions." />
+  <meta name="keywords" content="workout tracker, gym planner, fitness app, exercise log, weight training, personal record tracker, offline workout app, free gym tracker, DEADRYX" />
+  <meta name="author" content="Bharat Ji Dubey" />
+  <meta name="robots" content="index, follow" />
+  <link rel="canonical" href="https://deadryx.netlify.app/" />
+
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://deadryx.netlify.app/" />
+  <meta property="og:title" content="DEADRYX | Free Workout Tracker & Gym Planner" />
+  <meta property="og:description" content="Track your workouts, log lifts, crush PRs, and visualize your gym progress — completely free and offline. No ads, no accounts required." />
+  <meta property="og:image" content="https://deadryx.netlify.app/logo.png" />
+  <meta property="og:site_name" content="DEADRYX" />
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="DEADRYX | Free Workout Tracker & Gym Planner" />
+  <meta name="twitter:description" content="Track your workouts, log lifts, crush PRs, and visualize your gym progress — completely free and offline." />
+  <meta name="twitter:image" content="https://deadryx.netlify.app/logo.png" />
+
+  <!-- Structured Data (JSON-LD) -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "DEADRYX",
+    "url": "https://deadryx.netlify.app",
+    "description": "Free, offline-first workout tracker and gym planner. Log your lifts, track PRs, and visualize progress.",
+    "applicationCategory": "HealthApplication",
+    "operatingSystem": "Web Browser",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "INR"
+    },
+    "author": {
+      "@type": "Person",
+      "name": "Bharat Ji Dubey",
+      "email": "bharatjid021@gmail.com"
+    },
+    "featureList": [
+      "Offline workout logging",
+      "Personal record tracking with celebrations",
+      "Progress analytics and charts",
+      "Google Drive cloud sync",
+      "BMI calculator and tracking",
+      "Custom workout split planning",
+      "Dark and light theme",
+      "Data export and import"
+    ]
+  }
+  </script>
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css" />
-  <script src="shared.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.4/dist/confetti.browser.min.js"></script>
+  <script src="shared.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.4/dist/confetti.browser.min.js" defer></script>
 </head>
 
+
 <body>
+  <!-- Dark Mode Hero Background Overlay -->
+  <div class="hero-bg" aria-hidden="true">
+    <div class="hero-grid"></div>
+    <div class="hero-mosaic"></div>
+    <div class="hero-center-fade"></div>
+    <div class="hero-vignette"></div>
+  </div>
+
   <div class="app-shell">
 
     <!-- Mobile Header -->
     <header class="mobile-header">
       <div class="brand" style="margin:0;">
         <div class="brand-mark" style="width: 38px; height: 38px; font-size: 0.9rem; border-radius: 10px;">
-          <img src="logo.png" alt="DEADRYX Logo">
+          <img src="logo.png" alt="DEADRYX Logo" width="38" height="38" loading="eager">
         </div>
         <div>
           <p class="brand-name" style="font-size: 1.1rem;">DEADRYX</p>
@@ -44,7 +110,7 @@
     <aside class="sidebar" id="appSidebar">
       <div class="brand">
         <div class="brand-mark">
-          <img src="logo.png" alt="DEADRYX Logo">
+          <img src="logo.png" alt="DEADRYX Logo" width="48" height="48" loading="eager">
         </div>
         <div style="flex: 1;">
           <p class="brand-name">DEADRYX</p>
@@ -152,24 +218,27 @@
         <div class="calendar-grid" id="calendarGrid"></div>
       </section>
 
-      <section class="panel attendance-panel">
-        <div class="section-head">
+      <section class="panel attendance-panel" id="attendanceSection">
+        <div class="section-head panel-header-toggle" onclick="this.closest('.panel').classList.toggle('collapsed')">
           <div>
             <p class="panel-kicker">Gym Attendance</p>
             <h2>1 year activity graph</h2>
           </div>
-          <p class="muted-text">Green means you hit the gym on that day</p>
+          <span class="collapse-icon">▾</span>
         </div>
-        <div class="attendance-scroll-wrapper" id="attendanceScrollWrapper">
-          <div class="attendance-scroll-inner">
-            <div class="attendance-months" id="attendanceMonths"></div>
-            <div class="attendance-grid" id="attendanceGrid"></div>
+        <div class="panel-collapse-body">
+          <p class="muted-text" style="margin-bottom: 0.8rem;">Green means you hit the gym on that day</p>
+          <div class="attendance-scroll-wrapper" id="attendanceScrollWrapper">
+            <div class="attendance-scroll-inner">
+              <div class="attendance-months" id="attendanceMonths"></div>
+              <div class="attendance-grid" id="attendanceGrid"></div>
+            </div>
           </div>
-        </div>
-        <div class="attendance-legend">
-          <span>Less</span>
-          <div class="legend-scale"><i></i><i></i><i></i><i></i></div>
-          <span>More</span>
+          <div class="attendance-legend">
+            <span>Less</span>
+            <div class="legend-scale"><i></i><i></i><i></i><i></i></div>
+            <span>More</span>
+          </div>
         </div>
       </section>
 
@@ -205,7 +274,7 @@
               style="background: transparent; color: var(--green); border: 1px solid var(--green); padding: 0.5rem 0.9rem; font-size: 0.82rem;">+ Add
               Exercise</button>
             <button class="primary-btn" id="toggleDeleteModeBtn"
-              style="background: transparent; color: var(--red); border: 1px solid var(--red); padding: 0.5rem 0.9rem; font-size: 0.82rem;">🗑️ Remove</button>
+              style="background: transparent; color: var(--red); border: 1px solid var(--red); padding: 0.5rem 0.9rem; font-size: 0.82rem;">❌</button>
           </div>
           <p class="save-message" id="saveMessage"></p>
         </div>
@@ -213,13 +282,16 @@
 
       <!-- Stats Summary Panel -->
       <section class="panel attendance-panel" id="statsPanel">
-        <div class="section-head">
+        <div class="section-head panel-header-toggle" onclick="this.closest('.panel').classList.toggle('collapsed')">
           <div>
             <p class="panel-kicker">Activity Summary</p>
             <h2>Your Training Stats</h2>
           </div>
+          <span class="collapse-icon">▾</span>
         </div>
-        <div id="statsSummary"></div>
+        <div class="panel-collapse-body">
+          <div id="statsSummary"></div>
+        </div>
       </section>
 
       <!-- About Section -->
@@ -294,7 +366,7 @@
           </div>
         </div>
 
-        <p class="about-copyright">© 2026 DEADRYX. Built with 💪 for the gym community.</p>
+        <p class="about-copyright">© 2026 DEADRYX. Built with 💪 for the gym community. | <a href="privacy.html" style="color: var(--muted); text-decoration: underline;">Privacy Policy</a></p>
       </section>
     </main>
   </div>
@@ -305,9 +377,10 @@
       <h3>Add Custom Exercise</h3>
       <p class="muted-text">Select target muscles for this exercise</p>
       <div class="muscle-checkboxes" id="muscleCheckboxes"></div>
-      <div class="input-group" style="margin-top: 1.25rem;">
+      <div class="input-group" style="margin-top: 1.25rem; position: relative;">
         <label for="newExerciseName">Exercise Name</label>
-        <input type="text" id="newExerciseName" class="field-input" placeholder="e.g. Incline Machine Press" style="margin-top: 0.5rem;">
+        <input type="text" id="newExerciseName" class="field-input" placeholder="e.g. Incline Machine Press" style="margin-top: 0.5rem;" autocomplete="off">
+        <div id="autocompleteDropdown" class="autocomplete-list"></div>
       </div>
       <div class="actions" style="margin-top: 1.5rem; justify-content: flex-end;">
         <button class="primary-btn" id="cancelAddExerciseBtn" style="background: transparent; color: var(--muted); border: 1px solid var(--border);">Cancel</button>
@@ -329,12 +402,19 @@
     </div>
   </div>
 
-  <!-- TEMPORARY: Remove after testing -->\r
-  <script src="seed-data.js"></script>\r
-\r
-  <script src="stats.js"></script>
-  <script src="script.js"></script>
-  <script src="bmi.js"></script>
+
+  <!-- Storage Consent Banner -->
+  <div class="consent-banner" id="storageConsentBanner">
+    <div class="consent-content">
+      <div class="consent-icon">💾</div>
+      <p>We use local storage to save your workout data offline. Please allow this to ensure your progress is saved.</p>
+    </div>
+    <button class="primary-btn" id="acceptStorageBtn" style="white-space: nowrap;">Allow Offline Storage</button>
+  </div>
+
+  <script src="stats.js" defer></script>
+  <script src="script.js" defer></script>
+  <script src="bmi.js" defer></script>
 
   <!-- Google Drive Sync Integration -->
   <script src="gdrive-sync.js"></script>

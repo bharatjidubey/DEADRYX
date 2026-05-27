@@ -391,6 +391,39 @@ if (saveWorkoutBtn) {
   saveWorkoutBtn.addEventListener("click", saveWorkout);
 }
 
+// --- Searchable Exercise Database ---
+const POPULAR_EXERCISES = [
+  { name: "Barbell Bench Press", muscle: "Chest" },
+  { name: "Incline Dumbbell Press", muscle: "Chest" },
+  { name: "Cable Crossover", muscle: "Chest" },
+  { name: "Push-ups", muscle: "Chest" },
+  { name: "Barbell Squat", muscle: "Legs" },
+  { name: "Leg Press", muscle: "Legs" },
+  { name: "Romanian Deadlift", muscle: "Legs" },
+  { name: "Bulgarian Split Squat", muscle: "Legs" },
+  { name: "Calf Raises", muscle: "Legs" },
+  { name: "Deadlift", muscle: "Back" },
+  { name: "Pull-up", muscle: "Back" },
+  { name: "Lat Pulldown", muscle: "Back" },
+  { name: "Barbell Row", muscle: "Back" },
+  { name: "Seated Cable Row", muscle: "Back" },
+  { name: "Overhead Press", muscle: "Shoulders" },
+  { name: "Lateral Raise", muscle: "Shoulders" },
+  { name: "Front Raise", muscle: "Shoulders" },
+  { name: "Face Pulls", muscle: "Shoulders" },
+  { name: "Barbell Curl", muscle: "Biceps" },
+  { name: "Dumbbell Curl", muscle: "Biceps" },
+  { name: "Hammer Curl", muscle: "Biceps" },
+  { name: "Preacher Curl", muscle: "Biceps" },
+  { name: "Tricep Pushdown", muscle: "Triceps" },
+  { name: "Skull Crushers", muscle: "Triceps" },
+  { name: "Overhead Tricep Extension", muscle: "Triceps" },
+  { name: "Cable Crunch", muscle: "Abs" },
+  { name: "Hanging Leg Raise", muscle: "Abs" },
+  { name: "Plank", muscle: "Abs" },
+  { name: "Russian Twist", muscle: "Abs" }
+];
+
 // Add Exercise Modal Logic
 const addExerciseModal = document.getElementById("addExerciseModal");
 const openAddExerciseBtn = document.getElementById("openAddExerciseBtn");
@@ -398,6 +431,62 @@ const cancelAddExerciseBtn = document.getElementById("cancelAddExerciseBtn");
 const confirmAddExerciseBtn = document.getElementById("confirmAddExerciseBtn");
 const muscleCheckboxesContainer = document.getElementById("muscleCheckboxes");
 const newExerciseNameInput = document.getElementById("newExerciseName");
+const autocompleteDropdown = document.getElementById("autocompleteDropdown");
+
+function renderAutocomplete(query) {
+  if (!autocompleteDropdown) return;
+  autocompleteDropdown.innerHTML = "";
+  
+  if (!query) {
+    autocompleteDropdown.classList.remove("active");
+    return;
+  }
+
+  const lowerQuery = query.toLowerCase();
+  const matches = POPULAR_EXERCISES.filter(ex => ex.name.toLowerCase().includes(lowerQuery));
+
+  if (matches.length === 0) {
+    autocompleteDropdown.classList.remove("active");
+    return;
+  }
+
+  matches.forEach(ex => {
+    const item = document.createElement("div");
+    item.className = "autocomplete-item";
+    item.innerHTML = `
+      <span class="ac-name">${ex.name}</span>
+      <span class="ac-muscle">${ex.muscle}</span>
+    `;
+    item.addEventListener("click", () => {
+      newExerciseNameInput.value = ex.name;
+      autocompleteDropdown.classList.remove("active");
+      
+      // Auto-check the correct muscle group
+      const checkboxes = muscleCheckboxesContainer.querySelectorAll("input[type='checkbox']");
+      checkboxes.forEach(cb => {
+        if (cb.value === ex.muscle) cb.checked = true;
+        else cb.checked = false; // uncheck others
+      });
+    });
+    autocompleteDropdown.appendChild(item);
+  });
+
+  autocompleteDropdown.classList.add("active");
+}
+
+if (newExerciseNameInput && autocompleteDropdown) {
+  newExerciseNameInput.addEventListener("input", (e) => {
+    renderAutocomplete(e.target.value.trim());
+  });
+
+  // Hide dropdown when clicking outside
+  document.addEventListener("click", (e) => {
+    if (!newExerciseNameInput.contains(e.target) && !autocompleteDropdown.contains(e.target)) {
+      autocompleteDropdown.classList.remove("active");
+    }
+  });
+}
+
 
 if (openAddExerciseBtn && addExerciseModal) {
   openAddExerciseBtn.addEventListener("click", () => {
@@ -421,11 +510,13 @@ if (openAddExerciseBtn && addExerciseModal) {
     });
 
     newExerciseNameInput.value = "";
+    if (autocompleteDropdown) autocompleteDropdown.classList.remove("active");
     addExerciseModal.classList.add("active");
   });
 
   cancelAddExerciseBtn.addEventListener("click", () => {
     addExerciseModal.classList.remove("active");
+    if (autocompleteDropdown) autocompleteDropdown.classList.remove("active");
   });
 
   confirmAddExerciseBtn.addEventListener("click", () => {
@@ -544,12 +635,22 @@ function renderAttendance() {
     attendanceMonths.innerHTML += `<span>${m}</span>`;
   });
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const startDate = new Date(today.getTime() - 364 * 24 * 60 * 60 * 1000);
+  const year = new Date().getFullYear();
+  const startDate = new Date(year, 0, 1); // Jan 1
+  const endDate = new Date(year, 11, 31); // Dec 31
+  const totalDays = Math.floor((endDate - startDate) / (24 * 60 * 60 * 1000)) + 1;
 
-  for (let i = 0; i <= 364; i++) {
-    const d = new Date(startDate.getTime() + i * 24 * 60 * 60 * 1000);
+  // Add empty cells to align Jan 1 to the correct day-of-week row
+  const startDayOfWeek = startDate.getDay(); // 0=Sun, 1=Mon, ...
+  for (let i = 0; i < startDayOfWeek; i++) {
+    const empty = document.createElement("div");
+    empty.className = "attendance-cell";
+    empty.style.visibility = "hidden";
+    attendanceGrid.appendChild(empty);
+  }
+
+  for (let i = 0; i < totalDays; i++) {
+    const d = new Date(year, 0, 1 + i);
     const locDate = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
     const dateStr = locDate.toISOString().split("T")[0];
 
