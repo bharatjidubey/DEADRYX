@@ -45,6 +45,7 @@ const ATTENDANCE_KEY = "deadryx-attendance-v1";
 const HISTORICAL_KEY = "deadryx-historical-log-v1";
 const CUSTOM_EXERCISES_KEY = "deadryx-custom-exercises-v1";
 const HIDDEN_EXERCISES_KEY = "deadryx-hidden-exercises-v1";
+const EXERCISE_ORDER_KEY = "deadryx-exercise-order-v1";
 
 const calendarGrid = document.getElementById("calendarGrid");
 const selectedDayTitle = document.getElementById("selectedDayTitle");
@@ -63,6 +64,7 @@ let attendanceHistory = loadAttendanceHistory();
 let historicalLog = loadHistoricalLog();
 let customExercises = loadCustomExercises();
 let hiddenExercises = loadHiddenExercises();
+let exerciseOrder = loadExerciseOrder();
 let isDeleteMode = false;
 
 function loadHistory() {
@@ -120,6 +122,17 @@ function persistHiddenExercises() {
   localStorage.setItem(HIDDEN_EXERCISES_KEY, JSON.stringify(hiddenExercises));
 }
 
+function loadExerciseOrder() {
+  try {
+    const raw = localStorage.getItem(EXERCISE_ORDER_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch (error) { return {}; }
+}
+
+function persistExerciseOrder() {
+  localStorage.setItem(EXERCISE_ORDER_KEY, JSON.stringify(exerciseOrder));
+}
+
 function getCurrentDayIndex() {
   const today = new Date().getDay();
   const map = { 1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 0: 6 };
@@ -145,13 +158,31 @@ function getExercisesForDay(dayConfig) {
   
   let filtered = Array.from(uniqueMap.values());
 
-  filtered.sort((a, b) => {
-    let orderA = dayConfig.muscles.indexOf(a.muscle);
-    let orderB = dayConfig.muscles.indexOf(b.muscle);
-    if (orderA === -1) orderA = 999;
-    if (orderB === -1) orderB = 999;
-    return orderA - orderB;
-  });
+  const dayOrder = exerciseOrder[dayConfig.day];
+  if (dayOrder && dayOrder.length > 0) {
+    filtered.sort((a, b) => {
+      let idxA = dayOrder.indexOf(a.name.toLowerCase());
+      let idxB = dayOrder.indexOf(b.name.toLowerCase());
+      if (idxA === -1 && idxB === -1) {
+        let orderA = dayConfig.muscles.indexOf(a.muscle);
+        let orderB = dayConfig.muscles.indexOf(b.muscle);
+        if (orderA === -1) orderA = 999;
+        if (orderB === -1) orderB = 999;
+        return orderA - orderB;
+      }
+      if (idxA === -1) return 1;
+      if (idxB === -1) return -1;
+      return idxA - idxB;
+    });
+  } else {
+    filtered.sort((a, b) => {
+      let orderA = dayConfig.muscles.indexOf(a.muscle);
+      let orderB = dayConfig.muscles.indexOf(b.muscle);
+      if (orderA === -1) orderA = 999;
+      if (orderB === -1) orderB = 999;
+      return orderA - orderB;
+    });
+  }
 
   return filtered;
 }
@@ -430,7 +461,7 @@ const POPULAR_EXERCISES = [
   { name: "Russian Twist", muscle: "Abs" }
 ];
 
-// Redesigned Add Exercise Modal Logic
+// Redesigned Edit Log Modal Logic
 const addExerciseModal = document.getElementById("addExerciseModal");
 const openAddExerciseBtn = document.getElementById("openAddExerciseBtn");
 const cancelAddExerciseBtn = document.getElementById("cancelAddExerciseBtn");
@@ -438,39 +469,95 @@ const confirmAddExerciseBtn = document.getElementById("confirmAddExerciseBtn");
 const modalMuscleSelect = document.getElementById("modalMuscleSelect");
 const modalExercisesSection = document.getElementById("modalExercisesSection");
 const exerciseRowsContainer = document.getElementById("exerciseRowsContainer");
-const modalAddRowBtn = document.getElementById("modalAddRowBtn");
 
-function addExerciseRow(name = "", sets = 3) {
+// New input references for adding new exercises in Edit Log
+const modalNewExerciseName = document.getElementById("modalNewExerciseName");
+const modalNewExerciseSets = document.getElementById("modalNewExerciseSets");
+const modalAddNewExerciseBtn = document.getElementById("modalAddNewExerciseBtn");
+
+// Input references for Copy Exercises feature
+const modalCopySourceDay = document.getElementById("modalCopySourceDay");
+const modalCopyMuscleFilter = document.getElementById("modalCopyMuscleFilter");
+const modalCopyExercisesBtn = document.getElementById("modalCopyExercisesBtn");
+
+let localExercises = []; // Holds current exercises: { name, muscle, sets, originalName }
+
+function syncLocalExercisesInputs() {
   if (!exerciseRowsContainer) return;
-  
-  // Escape HTML special chars to prevent breakage with quotes in names
-  const safeName = name.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  
-  const row = document.createElement("div");
-  row.className = "exercise-entry-row";
-  row.innerHTML = `
-    <div class="input-group" style="flex: 3; margin: 0; position: relative;">
-      <input type="text" class="field-input js-modal-exercise-name" placeholder="e.g. Incline Machine Press" list="popularExercisesDatalist" autocomplete="off" value="${safeName}" style="width: 100%;">
-    </div>
-    <div class="input-group" style="flex: 1; margin: 0;">
-      <input type="number" class="field-input js-modal-exercise-sets" placeholder="Sets" min="1" max="15" value="${sets}" style="width: 100%; text-align: center;">
-    </div>
-    <button type="button" class="js-modal-remove-row-btn" aria-label="Remove exercise row">
-      🗑️
-    </button>
-  `;
-  
-  // Wire up remove button
-  const removeBtn = row.querySelector(".js-modal-remove-row-btn");
-  removeBtn.addEventListener("click", () => {
-    row.remove();
-    // Always keep at least one row
-    if (exerciseRowsContainer.children.length === 0) {
-      addExerciseRow("", 3);
+  const rows = exerciseRowsContainer.querySelectorAll(".edit-log-row");
+  rows.forEach(row => {
+    const idx = parseInt(row.dataset.index, 10);
+    const nameInput = row.querySelector(".js-modal-exercise-name");
+    const setsInput = row.querySelector(".js-modal-exercise-sets");
+    if (nameInput && setsInput && localExercises[idx]) {
+      localExercises[idx].name = nameInput.value.trim();
+      localExercises[idx].sets = parseInt(setsInput.value, 10) || 3;
     }
   });
-  
-  exerciseRowsContainer.appendChild(row);
+}
+
+function renderModalExercises() {
+  if (!exerciseRowsContainer) return;
+  exerciseRowsContainer.innerHTML = "";
+
+  if (localExercises.length === 0) {
+    exerciseRowsContainer.innerHTML = '<p class="empty-note" style="text-align: center; margin: 1rem 0; width: 100%;">No exercises on this day yet.</p>';
+    return;
+  }
+
+  localExercises.forEach((ex, idx) => {
+    const safeName = ex.name.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const row = document.createElement("div");
+    row.className = "edit-log-row";
+    row.dataset.index = idx;
+    
+    row.innerHTML = `
+      <div class="sort-btn-group">
+        <button type="button" class="sort-btn js-move-up" title="Move Up" ${idx === 0 ? 'disabled style="opacity: 0.3; cursor: not-allowed;"' : ''}>▲</button>
+        <button type="button" class="sort-btn js-move-down" title="Move Down" ${idx === localExercises.length - 1 ? 'disabled style="opacity: 0.3; cursor: not-allowed;"' : ''}>▼</button>
+      </div>
+      <span class="modal-muscle-badge" data-muscle="${ex.muscle}">${ex.muscle}</span>
+      <div class="input-group" style="flex: 3; margin: 0;">
+        <input type="text" class="field-input js-modal-exercise-name" placeholder="Exercise name" list="popularExercisesDatalist" autocomplete="off" value="${safeName}" style="width: 100%;">
+      </div>
+      <div class="input-group" style="flex: 0.8; margin: 0; min-width: 50px;">
+        <input type="number" class="field-input js-modal-exercise-sets" placeholder="Sets" min="1" max="15" value="${ex.sets || 3}" style="width: 100%; text-align: center;">
+      </div>
+      <button type="button" class="js-modal-remove-row-btn" aria-label="Remove exercise" style="margin-left: auto;">
+        🗑️
+      </button>
+    `;
+
+    // Reordering actions
+    row.querySelector(".js-move-up").addEventListener("click", () => {
+      if (idx > 0) {
+        syncLocalExercisesInputs();
+        const temp = localExercises[idx];
+        localExercises[idx] = localExercises[idx - 1];
+        localExercises[idx - 1] = temp;
+        renderModalExercises();
+      }
+    });
+
+    row.querySelector(".js-move-down").addEventListener("click", () => {
+      if (idx < localExercises.length - 1) {
+        syncLocalExercisesInputs();
+        const temp = localExercises[idx];
+        localExercises[idx] = localExercises[idx + 1];
+        localExercises[idx + 1] = temp;
+        renderModalExercises();
+      }
+    });
+
+    // Remove action
+    row.querySelector(".js-modal-remove-row-btn").addEventListener("click", () => {
+      syncLocalExercisesInputs();
+      localExercises.splice(idx, 1);
+      renderModalExercises();
+    });
+
+    exerciseRowsContainer.appendChild(row);
+  });
 }
 
 function updateDatalistOptions(selectedMuscle) {
@@ -478,7 +565,6 @@ function updateDatalistOptions(selectedMuscle) {
   if (!datalist) return;
   datalist.innerHTML = "";
   
-  // Filter popular exercises matching selectedMuscle
   const filtered = POPULAR_EXERCISES.filter(ex => ex.muscle.toLowerCase() === selectedMuscle.toLowerCase());
   filtered.forEach(ex => {
     const opt = document.createElement("option");
@@ -487,15 +573,44 @@ function updateDatalistOptions(selectedMuscle) {
   });
 }
 
-if (modalMuscleSelect && modalExercisesSection) {
+if (modalMuscleSelect) {
   modalMuscleSelect.addEventListener("change", (e) => {
     const muscle = e.target.value;
     if (muscle) {
-      modalExercisesSection.classList.remove("blocked");
       updateDatalistOptions(muscle);
-    } else {
-      modalExercisesSection.classList.add("blocked");
     }
+  });
+}
+
+if (modalAddNewExerciseBtn) {
+  modalAddNewExerciseBtn.addEventListener("click", () => {
+    const muscle = modalMuscleSelect ? modalMuscleSelect.value : "";
+    const name = modalNewExerciseName ? modalNewExerciseName.value.trim() : "";
+    const sets = modalNewExerciseSets ? parseInt(modalNewExerciseSets.value, 10) : 3;
+
+    if (!muscle) {
+      alert("Please select a muscle group.");
+      return;
+    }
+    if (!name) {
+      alert("Please enter an exercise name.");
+      return;
+    }
+
+    syncLocalExercisesInputs();
+
+    localExercises.push({
+      name: name,
+      muscle: muscle,
+      sets: sets || 3,
+      originalName: ""
+    });
+
+    if (modalNewExerciseName) modalNewExerciseName.value = "";
+    if (modalNewExerciseSets) modalNewExerciseSets.value = "3";
+    if (modalMuscleSelect) modalMuscleSelect.selectedIndex = 0;
+
+    renderModalExercises();
   });
 }
 
@@ -503,24 +618,123 @@ if (openAddExerciseBtn && addExerciseModal) {
   openAddExerciseBtn.addEventListener("click", () => {
     const dayConfig = workoutPlan[selectedDayIndex];
     if (dayConfig.day === "Sunday" || dayConfig.muscles.includes("Rest")) {
-      alert("Cannot add exercise on a Rest day. Select another day.");
+      alert("Cannot edit exercises on a Rest day. Select another day.");
       return;
     }
 
-    // Reset modal states
+    // Dynamic Title
+    const titleEl = document.getElementById("modalEditLogTitle");
+    if (titleEl) {
+      titleEl.textContent = `Edit Log - ${dayConfig.day}`;
+    }
+
+    // Reset inputs
     if (modalMuscleSelect) modalMuscleSelect.selectedIndex = 0;
-    if (modalExercisesSection) modalExercisesSection.classList.add("blocked");
-    if (exerciseRowsContainer) {
-      exerciseRowsContainer.innerHTML = "";
-      addExerciseRow("", 3);
+    if (modalNewExerciseName) modalNewExerciseName.value = "";
+    if (modalNewExerciseSets) modalNewExerciseSets.value = "3";
+
+    // Load day exercises
+    const dayExercises = getExercisesForDay(dayConfig);
+    localExercises = dayExercises.map(ex => ({
+      name: ex.name,
+      muscle: ex.muscle,
+      sets: parseInt(ex.sets, 10) || 3,
+      originalName: ex.name
+    }));
+
+    renderModalExercises();
+
+    // Populate copy source days (excluding current day and rest days)
+    if (modalCopySourceDay) {
+      modalCopySourceDay.innerHTML = '<option value="" disabled selected>-- Select Day --</option>';
+      workoutPlan.forEach(plan => {
+        if (plan.day !== dayConfig.day && !plan.muscles.includes("Rest")) {
+          const muscleStr = plan.muscles.join(" + ");
+          const opt = document.createElement("option");
+          opt.value = plan.day;
+          opt.textContent = `${plan.day} (${muscleStr})`;
+          modalCopySourceDay.appendChild(opt);
+        }
+      });
+    }
+    if (modalCopyMuscleFilter) {
+      modalCopyMuscleFilter.innerHTML = '<option value="ALL" selected>All Muscles</option>';
     }
     
     addExerciseModal.classList.add("active");
   });
 
-  if (modalAddRowBtn) {
-    modalAddRowBtn.addEventListener("click", () => {
-      addExerciseRow("", 3);
+  // Dynamic Muscle filtering when a source day is selected
+  if (modalCopySourceDay) {
+    modalCopySourceDay.addEventListener("change", (e) => {
+      const sourceDay = e.target.value;
+      if (modalCopyMuscleFilter) {
+        modalCopyMuscleFilter.innerHTML = '<option value="ALL" selected>All Muscles</option>';
+        
+        const sourcePlan = workoutPlan.find(p => p.day === sourceDay);
+        if (sourcePlan && sourcePlan.muscles) {
+          sourcePlan.muscles.forEach(muscle => {
+            if (muscle !== "Rest") {
+              const opt = document.createElement("option");
+              opt.value = muscle;
+              opt.textContent = `${muscle} only`;
+              modalCopyMuscleFilter.appendChild(opt);
+            }
+          });
+        }
+      }
+    });
+  }
+
+  // Copy exercises click event
+  if (modalCopyExercisesBtn) {
+    modalCopyExercisesBtn.addEventListener("click", () => {
+      const sourceDay = modalCopySourceDay ? modalCopySourceDay.value : "";
+      const muscleFilter = modalCopyMuscleFilter ? modalCopyMuscleFilter.value : "ALL";
+
+      if (!sourceDay) {
+        alert("Please select a training day to copy from.");
+        return;
+      }
+
+      const sourcePlan = workoutPlan.find(p => p.day === sourceDay);
+      if (!sourcePlan) return;
+
+      const sourceExercises = getExercisesForDay(sourcePlan);
+      if (sourceExercises.length === 0) {
+        alert(`No exercises found on ${sourceDay} to copy.`);
+        return;
+      }
+
+      syncLocalExercisesInputs();
+
+      let copyCount = 0;
+      const existingNamesLower = localExercises.map(ex => ex.name.toLowerCase());
+
+      sourceExercises.forEach(ex => {
+        // Apply muscle filter if specified
+        if (muscleFilter !== "ALL" && ex.muscle.toLowerCase() !== muscleFilter.toLowerCase()) {
+          return;
+        }
+
+        // Avoid adding duplicate exercises
+        if (!existingNamesLower.includes(ex.name.toLowerCase())) {
+          localExercises.push({
+            name: ex.name,
+            muscle: ex.muscle,
+            sets: parseInt(ex.sets, 10) || 3,
+            originalName: "" // Newly copied, treat as new for this day
+          });
+          copyCount++;
+        }
+      });
+
+      if (copyCount > 0) {
+        renderModalExercises();
+        alert(`Successfully copied ${copyCount} exercise(s) from ${sourceDay}!`);
+      } else {
+        alert(`No new exercises were copied (they might already be in your active log).`);
+      }
     });
   }
 
@@ -529,60 +743,180 @@ if (openAddExerciseBtn && addExerciseModal) {
   });
 
   confirmAddExerciseBtn.addEventListener("click", () => {
-    const muscle = modalMuscleSelect ? modalMuscleSelect.value : "";
-    if (!muscle) {
-      alert("Please select a muscle group.");
-      return;
-    }
+    syncLocalExercisesInputs();
 
-    const rows = exerciseRowsContainer ? exerciseRowsContainer.querySelectorAll(".exercise-entry-row") : [];
-    const entries = [];
-    rows.forEach(row => {
-      const nameInput = row.querySelector(".js-modal-exercise-name");
-      const setsInput = row.querySelector(".js-modal-exercise-sets");
-      if (nameInput && setsInput) {
-        const name = nameInput.value.trim();
-        const sets = parseInt(setsInput.value, 10) || 3;
-        if (name) {
-          entries.push({ name, sets });
-        }
-      }
-    });
-
-    if (entries.length === 0) {
-      alert("Please enter at least one exercise name.");
+    // Validation
+    const hasEmpty = localExercises.some(ex => !ex.name);
+    if (hasEmpty) {
+      alert("Please ensure all exercise names are filled in.");
       return;
     }
 
     const targetDay = workoutPlan[selectedDayIndex].day;
-    entries.forEach(entry => {
-      // Unhide exercise if it was previously hidden/deleted
-      hiddenExercises = hiddenExercises.filter(ex => ex.toLowerCase() !== entry.name.toLowerCase());
-      
-      // Add or update custom exercise — single lookup instead of some + find
-      const existingIdx = customExercises.findIndex(ex => 
-        ex.name.toLowerCase() === entry.name.toLowerCase() && 
-        ex.specificDay === targetDay && 
-        ex.muscle === muscle
-      );
-      
-      if (existingIdx === -1) {
-        customExercises.push({
-          name: entry.name,
-          muscle: muscle,
-          specificDay: targetDay,
-          sets: entry.sets
-        });
-      } else {
-        customExercises[existingIdx].sets = entry.sets;
+
+    // 1. Detect Deleted Exercises
+    const initialExercises = getExercisesForDay(workoutPlan[selectedDayIndex]);
+    const finalNamesLower = localExercises.map(ex => ex.name.toLowerCase());
+
+    initialExercises.forEach(initEx => {
+      if (!finalNamesLower.includes(initEx.name.toLowerCase())) {
+        const isDefault = exerciseSource.some(dEx => dEx.name.toLowerCase() === initEx.name.toLowerCase());
+        if (isDefault) {
+          if (!hiddenExercises.includes(initEx.name)) {
+            hiddenExercises.push(initEx.name);
+          }
+        } else {
+          customExercises = customExercises.filter(cEx => cEx.name.toLowerCase() !== initEx.name.toLowerCase());
+        }
       }
     });
 
+    // 2. Process Renamed and Updated Exercises
+    localExercises.forEach(ex => {
+      // Unhide if it was hidden
+      hiddenExercises = hiddenExercises.filter(x => x.toLowerCase() !== ex.name.toLowerCase());
+
+      const A = ex.originalName;
+      const B = ex.name;
+
+      if (A && A.toLowerCase() !== B.toLowerCase()) {
+        // Exercise was RENAMED!
+        console.log(`Renaming exercise from '${A}' to '${B}'...`);
+
+        // A. Custom Exercises list
+        const isDefault = exerciseSource.some(dEx => dEx.name.toLowerCase() === A.toLowerCase());
+        if (isDefault) {
+          // Hide old default
+          if (!hiddenExercises.includes(A)) {
+            hiddenExercises.push(A);
+          }
+          // Register new as custom exercise
+          customExercises.push({
+            name: B,
+            muscle: ex.muscle,
+            specificDay: targetDay,
+            sets: ex.sets
+          });
+        } else {
+          // Update custom exercise name and sets
+          const idx = customExercises.findIndex(cEx => cEx.name.toLowerCase() === A.toLowerCase());
+          if (idx !== -1) {
+            customExercises[idx].name = B;
+            customExercises[idx].sets = ex.sets;
+          }
+        }
+
+        // B. Workout History Keys migration
+        for (const day in workoutHistory) {
+          if (workoutHistory[day][A]) {
+            workoutHistory[day][B] = workoutHistory[day][A];
+            delete workoutHistory[day][A];
+          }
+        }
+
+        // C. Historical Log Keys migration
+        for (const date in historicalLog) {
+          if (historicalLog[date][A]) {
+            historicalLog[date][B] = historicalLog[date][A];
+            delete historicalLog[date][A];
+          }
+        }
+
+        // D. PR Records Migration
+        if (typeof loadPRRecords === 'function' && typeof savePRRecords === 'function') {
+          const prs = loadPRRecords();
+          if (prs[A]) {
+            prs[B] = prs[A];
+            delete prs[A];
+            savePRRecords(prs);
+          }
+        }
+
+        // E. Notes Migration
+        try {
+          const rawNotes = localStorage.getItem("deadryx-notes-v1");
+          if (rawNotes) {
+            const notes = JSON.parse(rawNotes);
+            if (notes[A]) {
+              notes[B] = notes[A];
+              delete notes[A];
+              localStorage.setItem("deadryx-notes-v1", JSON.stringify(notes));
+            }
+          }
+        } catch (err) {
+          console.error("Notes migration error:", err);
+        }
+
+        // F. Targets Migration
+        try {
+          const rawTargets = localStorage.getItem("deadryx-targets-v1");
+          if (rawTargets) {
+            const targets = JSON.parse(rawTargets);
+            if (targets[A]) {
+              targets[B] = targets[A];
+              delete targets[A];
+              localStorage.setItem("deadryx-targets-v1", JSON.stringify(targets));
+            }
+          }
+        } catch (err) {
+          console.error("Targets migration error:", err);
+        }
+
+        // G. Exercise Order configurations migration
+        for (const day in exerciseOrder) {
+          const list = exerciseOrder[day];
+          if (Array.isArray(list)) {
+            const index = list.indexOf(A.toLowerCase());
+            if (index !== -1) {
+              list[index] = B.toLowerCase();
+            }
+          }
+        }
+      } else {
+        // Exercise was NOT renamed, but maybe sets changed or it is NEW
+        if (!A) {
+          // BRAND NEW exercise
+          customExercises.push({
+            name: B,
+            muscle: ex.muscle,
+            specificDay: targetDay,
+            sets: ex.sets
+          });
+        } else {
+          // Check sets updates for existing
+          const cIdx = customExercises.findIndex(cEx => cEx.name.toLowerCase() === B.toLowerCase());
+          if (cIdx !== -1) {
+            customExercises[cIdx].sets = ex.sets;
+          } else {
+            const isDefault = exerciseSource.some(dEx => dEx.name.toLowerCase() === B.toLowerCase());
+            if (isDefault) {
+              // Override default sets by saving as custom
+              customExercises.push({
+                name: B,
+                muscle: ex.muscle,
+                specificDay: targetDay,
+                sets: ex.sets
+              });
+            }
+          }
+        }
+      }
+    });
+
+    // 3. Save Custom Exercises sorting order for the day
+    exerciseOrder[targetDay] = localExercises.map(ex => ex.name.toLowerCase());
+
+    // 4. Persist and Sync
     persistHiddenExercises();
     persistCustomExercises();
+    persistHistory();
+    persistHistoricalLog();
+    persistExerciseOrder();
+    
     triggerSync();
+
     addExerciseModal.classList.remove("active");
-    saveMessage.textContent = "Exercises saved to workout day!";
+    saveMessage.textContent = "Log structure saved successfully!";
     saveMessage.style.color = "var(--green)";
     renderWorkoutDay();
   });

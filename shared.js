@@ -50,6 +50,7 @@ const BACKUP_KEYS = [
   "deadryx-bmi-history-v1",
   "deadryx-bmi-profile-v1",
   "deadryx-bmi-target-v1",
+  "deadryx-exercise-order-v1",
   "deadryx-last-write-v1",
   THEME_KEY
 ];

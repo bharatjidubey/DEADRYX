@@ -202,6 +202,7 @@ function getDriveStructuredData() {
     "deadryx-bmi-history-v1",
     "deadryx-bmi-profile-v1",
     "deadryx-bmi-target-v1",
+    "deadryx-exercise-order-v1",
     "deadryx-last-write-v1"
   ];
 

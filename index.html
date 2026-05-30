@@ -271,8 +271,7 @@
           <button class="primary-btn" id="saveWorkoutBtn" style="padding: 0.7rem 1.1rem; font-size: 0.88rem;">Save Today's Workout</button>
           <div style="margin-left: auto; display: flex; gap: 0.6rem; align-items: center;">
             <button class="primary-btn" id="openAddExerciseBtn"
-              style="background: transparent; color: var(--green); border: 1px solid var(--green); padding: 0.5rem 0.9rem; font-size: 0.82rem;">+ Add
-              Exercise</button>
+              style="background: transparent; color: var(--green); border: 1px solid var(--green); padding: 0.5rem 0.9rem; font-size: 0.82rem;">✏️ Edit Log</button>
             <button class="primary-btn" id="toggleDeleteModeBtn"
               style="background: transparent; color: var(--red); border: 1px solid var(--red); padding: 0.5rem 0.9rem; font-size: 0.82rem;">❌</button>
           </div>
@@ -371,37 +370,62 @@
     </main>
   </div>
 
-  <!-- Add Exercise Modal Redesign -->
+  <!-- Edit Log Modal -->
   <div class="modal-overlay" id="addExerciseModal">
-    <div class="modal-content" style="max-width: 500px; max-height: 90vh; display: flex; flex-direction: column;">
-      <h3>Add Exercises</h3>
-      <p class="muted-text" style="margin-bottom: 1rem;">Select a muscle group to unlock the exercise logging section.</p>
+    <div class="modal-content" style="max-width: 580px; max-height: 90vh; display: flex; flex-direction: column;">
+      <h3 id="modalEditLogTitle">Edit Log</h3>
+      <p class="muted-text" style="margin-bottom: 1.25rem;">Rearrange, rename, or modify exercises for this day.</p>
       
-      <!-- Muscle Group Selection -->
-      <div class="input-group" style="margin-bottom: 1.25rem;">
-        <label for="modalMuscleSelect">Select Muscle Group</label>
-        <select id="modalMuscleSelect" class="field-input" style="margin-top: 0.5rem; width: 100%;">
-          <option value="" disabled selected>-- Choose Muscle Group --</option>
-          <option value="Chest">Chest</option>
-          <option value="Biceps">Biceps</option>
-          <option value="Shoulders">Shoulders</option>
-          <option value="Legs">Legs</option>
-          <option value="Back">Back</option>
-          <option value="Triceps">Triceps</option>
-          <option value="Abs">Abs</option>
-        </select>
+      <!-- Current Exercises Section (Lists existing exercises on the day) -->
+      <div id="modalExercisesSection" style="flex: 1; overflow-y: auto; padding-right: 0.5rem; margin-bottom: 1.25rem; min-height: 150px; display: flex; flex-direction: column;">
+        <label style="color: var(--green); font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 0.5rem;">Current Workout Structure</label>
+        <div id="exerciseRowsContainer" style="display: flex; flex-direction: column; gap: 0.6rem;">
+          <!-- Dynamically populated current exercises will go here -->
+        </div>
       </div>
 
-      <!-- Exercises Entry Section (Blocked by default) -->
-      <div id="modalExercisesSection" class="blocked" style="flex: 1; overflow-y: auto; padding-right: 0.5rem; margin-bottom: 1.25rem; transition: all 0.3s ease;">
-        <label style="color: var(--blue); font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 0.5rem;">Exercises & Sets</label>
-        <div id="exerciseRowsContainer">
-          <!-- Dynamically populated rows will go here -->
+      <!-- Copy Exercises Section -->
+      <div style="border-top: 1px solid var(--border); padding-top: 1rem; margin-bottom: 1.25rem;">
+        <label style="color: var(--yellow); font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 0.5rem;">Copy Exercises from Another Day</label>
+        <div class="modal-copy-row" style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+          <div style="flex: 1.2; min-width: 120px;">
+            <select id="modalCopySourceDay" class="field-input" style="width: 100%;">
+              <option value="" disabled selected>-- Select Day --</option>
+            </select>
+          </div>
+          <div style="flex: 1.2; min-width: 120px;">
+            <select id="modalCopyMuscleFilter" class="field-input" style="width: 100%;">
+              <option value="ALL" selected>All Muscles</option>
+            </select>
+          </div>
+          <button type="button" class="primary-btn" id="modalCopyExercisesBtn" style="padding: 0.5rem 0.9rem; background: var(--yellow); color: #0b0f16; border: none; font-size: 0.82rem; height: 38px; display: flex; align-items: center; justify-content: center; font-weight: 600; border-radius: 8px;">📥 Copy</button>
         </div>
-        
-        <button type="button" class="primary-btn" id="modalAddRowBtn" style="background: transparent; color: var(--blue); border: 1px dashed var(--blue); padding: 0.5rem 1rem; font-size: 0.8rem; width: 100%; margin-top: 0.5rem; justify-content: center; display: flex; gap: 0.4rem; align-items: center;">
-          <span>➕ Add Another Exercise</span>
-        </button>
+      </div>
+
+      <!-- Add New Exercise Section -->
+      <div style="border-top: 1px solid var(--border); padding-top: 1rem; margin-bottom: 1.25rem;">
+        <label style="color: var(--blue); font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 0.5rem;">Add New Exercise</label>
+        <div class="modal-add-row" style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+          <div style="flex: 1.2; min-width: 110px;">
+            <select id="modalMuscleSelect" class="field-input" style="width: 100%;">
+              <option value="" disabled selected>-- Muscle --</option>
+              <option value="Chest">Chest</option>
+              <option value="Biceps">Biceps</option>
+              <option value="Shoulders">Shoulders</option>
+              <option value="Legs">Legs</option>
+              <option value="Back">Back</option>
+              <option value="Triceps">Triceps</option>
+              <option value="Abs">Abs</option>
+            </select>
+          </div>
+          <div style="flex: 2; min-width: 160px; position: relative;">
+            <input type="text" id="modalNewExerciseName" class="field-input" placeholder="e.g. Barbell Bench Press" list="popularExercisesDatalist" autocomplete="off" style="width: 100%;">
+          </div>
+          <div style="flex: 0.6; min-width: 60px;">
+            <input type="number" id="modalNewExerciseSets" class="field-input" placeholder="Sets" min="1" max="15" value="3" style="width: 100%; text-align: center;">
+          </div>
+          <button type="button" class="primary-btn" id="modalAddNewExerciseBtn" style="padding: 0.5rem 0.9rem; background: var(--blue); color: #0b0f16; border: none; font-size: 0.82rem; height: 38px; display: flex; align-items: center; justify-content: center; font-weight: 600; border-radius: 8px;">Add</button>
+        </div>
       </div>
 
       <!-- Dynamic Autocomplete Datalist -->
@@ -410,7 +434,7 @@
       <!-- Action Buttons -->
       <div class="actions" style="justify-content: flex-end; padding-top: 1rem; border-top: 1px solid var(--border); margin-top: auto;">
         <button class="primary-btn" id="cancelAddExerciseBtn" style="background: transparent; color: var(--muted); border: 1px solid var(--border);">Cancel</button>
-        <button class="primary-btn" id="confirmAddExerciseBtn" style="min-width: 100px;">Save</button>
+        <button class="primary-btn" id="confirmAddExerciseBtn" style="min-width: 100px;">Save Changes</button>
       </div>
     </div>
   </div>
