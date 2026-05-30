@@ -4,7 +4,7 @@
 const CLIENT_ID = "195627152960-c2orf2tnpj53fvep8f20ms3abqppbsf6.apps.googleusercontent.com";
 const API_KEY = ""; // Not strictly required if using OAuth token flow for Drive REST API, but good to have if querying public data
 const DISCOVERY_DOC = "https://www.googleapis.com/discovery/v1/apis/drive/v3/rest";
-const SCOPES = "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.profile";
+const SCOPES = "https://www.googleapis.com/auth/drive.appdata https://www.googleapis.com/auth/userinfo.profile";
 
 let tokenClient;
 let gapiInited = false;
@@ -255,7 +255,7 @@ async function findSyncFile() {
     const response = await gapi.client.drive.files.list({
       q: `name='${SYNC_FILENAME}' and trashed=false`,
       fields: 'files(id, name)',
-      spaces: 'drive'
+      spaces: 'appDataFolder'
     });
     const files = response.result.files;
     if (files && files.length > 0) {
@@ -281,7 +281,7 @@ async function getOrCreateMemoriesFolder() {
     const response = await gapi.client.drive.files.list({
       q: `name='${MEMORIES_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
       fields: 'files(id, name)',
-      spaces: 'drive'
+      spaces: 'appDataFolder'
     });
 
     const files = response.result.files;
@@ -294,6 +294,7 @@ async function getOrCreateMemoriesFolder() {
     const createRes = await gapi.client.drive.files.create({
       resource: {
         name: MEMORIES_FOLDER_NAME,
+        parents: ['appDataFolder'],
         mimeType: 'application/vnd.google-apps.folder'
       },
       fields: 'id'
@@ -535,6 +536,7 @@ async function uploadToDriveInternal() {
     const file = new Blob([fileContent], { type: 'application/json' });
     const metadata = {
       name: SYNC_FILENAME,
+      parents: ['appDataFolder'],
       mimeType: 'application/json'
     };
 
@@ -592,6 +594,7 @@ async function performUploadToDrive() {
     const file = new Blob([fileContent], { type: 'application/json' });
     const metadata = {
       name: SYNC_FILENAME,
+      parents: ['appDataFolder'],
       mimeType: 'application/json'
     };
 
