@@ -371,20 +371,46 @@
     </main>
   </div>
 
-  <!-- Add Exercise Modal -->
+  <!-- Add Exercise Modal Redesign -->
   <div class="modal-overlay" id="addExerciseModal">
-    <div class="modal-content">
-      <h3>Add Custom Exercise</h3>
-      <p class="muted-text">Select target muscles for this exercise</p>
-      <div class="muscle-checkboxes" id="muscleCheckboxes"></div>
-      <div class="input-group" style="margin-top: 1.25rem; position: relative;">
-        <label for="newExerciseName">Exercise Name</label>
-        <input type="text" id="newExerciseName" class="field-input" placeholder="e.g. Incline Machine Press" style="margin-top: 0.5rem;" autocomplete="off">
-        <div id="autocompleteDropdown" class="autocomplete-list"></div>
+    <div class="modal-content" style="max-width: 500px; max-height: 90vh; display: flex; flex-direction: column;">
+      <h3>Add Exercises</h3>
+      <p class="muted-text" style="margin-bottom: 1rem;">Select a muscle group to unlock the exercise logging section.</p>
+      
+      <!-- Muscle Group Selection -->
+      <div class="input-group" style="margin-bottom: 1.25rem;">
+        <label for="modalMuscleSelect">Select Muscle Group</label>
+        <select id="modalMuscleSelect" class="field-input" style="margin-top: 0.5rem; width: 100%;">
+          <option value="" disabled selected>-- Choose Muscle Group --</option>
+          <option value="Chest">Chest</option>
+          <option value="Biceps">Biceps</option>
+          <option value="Shoulders">Shoulders</option>
+          <option value="Legs">Legs</option>
+          <option value="Back">Back</option>
+          <option value="Triceps">Triceps</option>
+          <option value="Abs">Abs</option>
+        </select>
       </div>
-      <div class="actions" style="margin-top: 1.5rem; justify-content: flex-end;">
+
+      <!-- Exercises Entry Section (Blocked by default) -->
+      <div id="modalExercisesSection" class="blocked" style="flex: 1; overflow-y: auto; padding-right: 0.5rem; margin-bottom: 1.25rem; transition: all 0.3s ease;">
+        <label style="color: var(--blue); font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 0.5rem;">Exercises & Sets</label>
+        <div id="exerciseRowsContainer">
+          <!-- Dynamically populated rows will go here -->
+        </div>
+        
+        <button type="button" class="primary-btn" id="modalAddRowBtn" style="background: transparent; color: var(--blue); border: 1px dashed var(--blue); padding: 0.5rem 1rem; font-size: 0.8rem; width: 100%; margin-top: 0.5rem; justify-content: center; display: flex; gap: 0.4rem; align-items: center;">
+          <span>➕ Add Another Exercise</span>
+        </button>
+      </div>
+
+      <!-- Dynamic Autocomplete Datalist -->
+      <datalist id="popularExercisesDatalist"></datalist>
+
+      <!-- Action Buttons -->
+      <div class="actions" style="justify-content: flex-end; padding-top: 1rem; border-top: 1px solid var(--border); margin-top: auto;">
         <button class="primary-btn" id="cancelAddExerciseBtn" style="background: transparent; color: var(--muted); border: 1px solid var(--border);">Cancel</button>
-        <button class="primary-btn" id="confirmAddExerciseBtn">Add</button>
+        <button class="primary-btn" id="confirmAddExerciseBtn" style="min-width: 100px;">Save</button>
       </div>
     </div>
   </div>

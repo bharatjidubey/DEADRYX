@@ -15,6 +15,7 @@ const ASSETS_TO_CACHE = [
   './bmi.js',
   './notes.js',
   './analysis.js',
+  './memories.js',
   './gdrive-sync.js',
   './logo.png',
   './manifest.json'
@@ -47,8 +48,8 @@ self.addEventListener('fetch', event => {
   event.respondWith(
     fetch(event.request)
       .then(response => {
-        // If valid response, clone it and update cache
-        if (response && response.status === 200 && response.type === 'basic') {
+        // If valid response, clone it and update cache (allows basic and CORS CDN caching)
+        if (response && response.status === 200 && (response.type === 'basic' || response.type === 'cors')) {
           const responseToCache = response.clone();
           caches.open(CACHE_NAME)
             .then(cache => {

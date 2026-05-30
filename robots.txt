@@ -8,5 +8,4 @@ Allow: /
 Sitemap: https://deadryx.netlify.app/sitemap.xml
 
 # Disallow internal/utility files
-Disallow: /seed-data.js
 Disallow: /.sixth/

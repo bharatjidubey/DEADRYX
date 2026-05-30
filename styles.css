@@ -1183,65 +1183,7 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
   font-size: 1.4rem;
 }
 
-/* Autocomplete Styles */
-.autocomplete-list {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  max-height: 200px;
-  overflow-y: auto;
-  z-index: 100;
-  margin-top: 0.25rem;
-  box-shadow: 0 12px 24px rgba(0,0,0,0.3);
-  display: none;
-}
 
-.autocomplete-list.active {
-  display: block;
-}
-
-.autocomplete-item {
-  padding: 0.75rem 1rem;
-  cursor: pointer;
-  border-bottom: 1px solid rgba(255,255,255,0.03);
-  transition: background 0.2s ease;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-:root[data-theme="light"] .autocomplete-item {
-  border-bottom: 1px solid rgba(0,0,0,0.03);
-}
-
-.autocomplete-item:last-child {
-  border-bottom: none;
-}
-
-.autocomplete-item:hover {
-  background: rgba(96, 165, 250, 0.1);
-}
-
-:root[data-theme="light"] .autocomplete-item:hover {
-  background: rgba(59, 130, 246, 0.1);
-}
-
-.ac-name {
-  color: var(--text);
-  font-weight: 600;
-}
-
-.ac-muscle {
-  font-size: 0.75rem;
-  color: var(--green);
-  background: var(--green-soft);
-  padding: 0.2rem 0.6rem;
-  border-radius: 999px;
-}
 
 .muscle-checkboxes {
   display: flex;
@@ -2939,3 +2881,65 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
   background: rgba(255, 255, 255, 0.75);
   color: #1e293b;
 }
+
+/* Redesigned Add Exercise Modal Styles */
+#modalExercisesSection {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+#modalExercisesSection.blocked {
+  opacity: 0.25 !important;
+  pointer-events: none !important;
+  user-select: none;
+}
+
+.exercise-entry-row {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  margin-bottom: 0.75rem;
+  animation: fadeInModalRow 0.25s ease;
+}
+
+@keyframes fadeInModalRow {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.exercise-entry-row .field-input {
+  background: var(--panel-2);
+}
+
+:root[data-theme="light"] .exercise-entry-row .field-input {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.exercise-entry-row .js-modal-remove-row-btn {
+  background: rgba(255, 107, 107, 0.08);
+  border: 1px solid rgba(255, 107, 107, 0.2);
+  color: var(--red);
+  padding: 0.5rem;
+  border-radius: 8px;
+  cursor: pointer;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  transition: all 0.2s ease;
+}
+
+.exercise-entry-row .js-modal-remove-row-btn:hover {
+  background: var(--red);
+  color: white;
+  border-color: var(--red);
+}
+

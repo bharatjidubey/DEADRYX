@@ -127,17 +127,23 @@ function getCurrentDayIndex() {
 }
 
 function getExercisesForDay(dayConfig) {
-  let filteredSource = exerciseSource.filter((exercise) => dayConfig.muscles.includes(exercise.muscle) && !hiddenExercises.includes(exercise.name));
+  const lowerHidden = hiddenExercises.map(x => x.toLowerCase());
+  let filteredSource = exerciseSource.filter((exercise) => dayConfig.muscles.includes(exercise.muscle) && !lowerHidden.includes(exercise.name.toLowerCase()));
 
   let filteredCustom = customExercises.filter(exercise => {
-    if (hiddenExercises.includes(exercise.name)) return false;
+    if (lowerHidden.includes(exercise.name.toLowerCase())) return false;
     if (exercise.specificDay) {
       return exercise.specificDay === dayConfig.day;
     }
     return dayConfig.muscles.includes(exercise.muscle);
   });
 
-  let filtered = [...filteredSource, ...filteredCustom];
+  // Deduplicate by name, preferring custom exercises which may override sets or specification
+  const uniqueMap = new Map();
+  filteredSource.forEach(ex => uniqueMap.set(ex.name.toLowerCase(), ex));
+  filteredCustom.forEach(ex => uniqueMap.set(ex.name.toLowerCase(), ex));
+  
+  let filtered = Array.from(uniqueMap.values());
 
   filtered.sort((a, b) => {
     let orderA = dayConfig.muscles.indexOf(a.muscle);
@@ -216,13 +222,15 @@ function renderWorkoutDay() {
     return;
   }
 
+  const todayStr = new Date().toISOString().split("T")[0];
+
   dayExercises.forEach((exercise) => {
     const card = document.createElement("article");
     card.className = "exercise-card";
 
-    const rows = Array.from({ length: 3 }, (_, index) => {
+    const setsCount = parseInt(exercise.sets, 10) || 3;
+    const rows = Array.from({ length: setsCount }, (_, index) => {
       const setNumber = index + 1;
-      const todayStr = new Date().toISOString().split("T")[0];
       const logData = workoutHistory?.[dayConfig.day]?.[exercise.name]?.[setNumber];
 
       let displayWeight = "";
@@ -422,69 +430,74 @@ const POPULAR_EXERCISES = [
   { name: "Russian Twist", muscle: "Abs" }
 ];
 
-// Add Exercise Modal Logic
+// Redesigned Add Exercise Modal Logic
 const addExerciseModal = document.getElementById("addExerciseModal");
 const openAddExerciseBtn = document.getElementById("openAddExerciseBtn");
 const cancelAddExerciseBtn = document.getElementById("cancelAddExerciseBtn");
 const confirmAddExerciseBtn = document.getElementById("confirmAddExerciseBtn");
-const muscleCheckboxesContainer = document.getElementById("muscleCheckboxes");
-const newExerciseNameInput = document.getElementById("newExerciseName");
-const autocompleteDropdown = document.getElementById("autocompleteDropdown");
+const modalMuscleSelect = document.getElementById("modalMuscleSelect");
+const modalExercisesSection = document.getElementById("modalExercisesSection");
+const exerciseRowsContainer = document.getElementById("exerciseRowsContainer");
+const modalAddRowBtn = document.getElementById("modalAddRowBtn");
 
-function renderAutocomplete(query) {
-  if (!autocompleteDropdown) return;
-  autocompleteDropdown.innerHTML = "";
+function addExerciseRow(name = "", sets = 3) {
+  if (!exerciseRowsContainer) return;
   
-  if (!query) {
-    autocompleteDropdown.classList.remove("active");
-    return;
-  }
-
-  const lowerQuery = query.toLowerCase();
-  const matches = POPULAR_EXERCISES.filter(ex => ex.name.toLowerCase().includes(lowerQuery));
-
-  if (matches.length === 0) {
-    autocompleteDropdown.classList.remove("active");
-    return;
-  }
-
-  matches.forEach(ex => {
-    const item = document.createElement("div");
-    item.className = "autocomplete-item";
-    item.innerHTML = `
-      <span class="ac-name">${ex.name}</span>
-      <span class="ac-muscle">${ex.muscle}</span>
-    `;
-    item.addEventListener("click", () => {
-      newExerciseNameInput.value = ex.name;
-      autocompleteDropdown.classList.remove("active");
-      
-      // Auto-check the correct muscle group
-      const checkboxes = muscleCheckboxesContainer.querySelectorAll("input[type='checkbox']");
-      checkboxes.forEach(cb => {
-        if (cb.value === ex.muscle) cb.checked = true;
-        else cb.checked = false; // uncheck others
-      });
-    });
-    autocompleteDropdown.appendChild(item);
+  // Escape HTML special chars to prevent breakage with quotes in names
+  const safeName = name.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  
+  const row = document.createElement("div");
+  row.className = "exercise-entry-row";
+  row.innerHTML = `
+    <div class="input-group" style="flex: 3; margin: 0; position: relative;">
+      <input type="text" class="field-input js-modal-exercise-name" placeholder="e.g. Incline Machine Press" list="popularExercisesDatalist" autocomplete="off" value="${safeName}" style="width: 100%;">
+    </div>
+    <div class="input-group" style="flex: 1; margin: 0;">
+      <input type="number" class="field-input js-modal-exercise-sets" placeholder="Sets" min="1" max="15" value="${sets}" style="width: 100%; text-align: center;">
+    </div>
+    <button type="button" class="js-modal-remove-row-btn" aria-label="Remove exercise row">
+      🗑️
+    </button>
+  `;
+  
+  // Wire up remove button
+  const removeBtn = row.querySelector(".js-modal-remove-row-btn");
+  removeBtn.addEventListener("click", () => {
+    row.remove();
+    // Always keep at least one row
+    if (exerciseRowsContainer.children.length === 0) {
+      addExerciseRow("", 3);
+    }
   });
-
-  autocompleteDropdown.classList.add("active");
+  
+  exerciseRowsContainer.appendChild(row);
 }
 
-if (newExerciseNameInput && autocompleteDropdown) {
-  newExerciseNameInput.addEventListener("input", (e) => {
-    renderAutocomplete(e.target.value.trim());
+function updateDatalistOptions(selectedMuscle) {
+  const datalist = document.getElementById("popularExercisesDatalist");
+  if (!datalist) return;
+  datalist.innerHTML = "";
+  
+  // Filter popular exercises matching selectedMuscle
+  const filtered = POPULAR_EXERCISES.filter(ex => ex.muscle.toLowerCase() === selectedMuscle.toLowerCase());
+  filtered.forEach(ex => {
+    const opt = document.createElement("option");
+    opt.value = ex.name;
+    datalist.appendChild(opt);
   });
+}
 
-  // Hide dropdown when clicking outside
-  document.addEventListener("click", (e) => {
-    if (!newExerciseNameInput.contains(e.target) && !autocompleteDropdown.contains(e.target)) {
-      autocompleteDropdown.classList.remove("active");
+if (modalMuscleSelect && modalExercisesSection) {
+  modalMuscleSelect.addEventListener("change", (e) => {
+    const muscle = e.target.value;
+    if (muscle) {
+      modalExercisesSection.classList.remove("blocked");
+      updateDatalistOptions(muscle);
+    } else {
+      modalExercisesSection.classList.add("blocked");
     }
   });
 }
-
 
 if (openAddExerciseBtn && addExerciseModal) {
   openAddExerciseBtn.addEventListener("click", () => {
@@ -494,55 +507,82 @@ if (openAddExerciseBtn && addExerciseModal) {
       return;
     }
 
-    muscleCheckboxesContainer.innerHTML = "";
-    const allMuscles = ["Chest", "Biceps", "Shoulders", "Legs", "Back", "Triceps", "Abs"];
-
-    allMuscles.forEach(m => {
-      const isChecked = dayConfig.muscles.includes(m) ? "checked" : "";
-      muscleCheckboxesContainer.innerHTML += `
-        <label class="muscle-chip-label">
-          <input type="checkbox" value="${m}" ${isChecked}>
-          <span>${m}</span>
-        </label>
-      `;
-    });
-
-    newExerciseNameInput.value = "";
-    if (autocompleteDropdown) autocompleteDropdown.classList.remove("active");
+    // Reset modal states
+    if (modalMuscleSelect) modalMuscleSelect.selectedIndex = 0;
+    if (modalExercisesSection) modalExercisesSection.classList.add("blocked");
+    if (exerciseRowsContainer) {
+      exerciseRowsContainer.innerHTML = "";
+      addExerciseRow("", 3);
+    }
+    
     addExerciseModal.classList.add("active");
   });
 
+  if (modalAddRowBtn) {
+    modalAddRowBtn.addEventListener("click", () => {
+      addExerciseRow("", 3);
+    });
+  }
+
   cancelAddExerciseBtn.addEventListener("click", () => {
     addExerciseModal.classList.remove("active");
-    if (autocompleteDropdown) autocompleteDropdown.classList.remove("active");
   });
 
   confirmAddExerciseBtn.addEventListener("click", () => {
-    const name = newExerciseNameInput.value.trim();
-    if (!name) {
-      alert("Please enter an exercise name.");
+    const muscle = modalMuscleSelect ? modalMuscleSelect.value : "";
+    if (!muscle) {
+      alert("Please select a muscle group.");
       return;
     }
 
-    const selectedCheckboxes = muscleCheckboxesContainer.querySelectorAll("input:checked");
-    if (selectedCheckboxes.length === 0) {
-      alert("Please select at least one muscle group.");
+    const rows = exerciseRowsContainer ? exerciseRowsContainer.querySelectorAll(".exercise-entry-row") : [];
+    const entries = [];
+    rows.forEach(row => {
+      const nameInput = row.querySelector(".js-modal-exercise-name");
+      const setsInput = row.querySelector(".js-modal-exercise-sets");
+      if (nameInput && setsInput) {
+        const name = nameInput.value.trim();
+        const sets = parseInt(setsInput.value, 10) || 3;
+        if (name) {
+          entries.push({ name, sets });
+        }
+      }
+    });
+
+    if (entries.length === 0) {
+      alert("Please enter at least one exercise name.");
       return;
     }
 
     const targetDay = workoutPlan[selectedDayIndex].day;
-    selectedCheckboxes.forEach(cb => {
-      customExercises.push({
-        name: name,
-        muscle: cb.value,
-        specificDay: targetDay
-      });
+    entries.forEach(entry => {
+      // Unhide exercise if it was previously hidden/deleted
+      hiddenExercises = hiddenExercises.filter(ex => ex.toLowerCase() !== entry.name.toLowerCase());
+      
+      // Add or update custom exercise — single lookup instead of some + find
+      const existingIdx = customExercises.findIndex(ex => 
+        ex.name.toLowerCase() === entry.name.toLowerCase() && 
+        ex.specificDay === targetDay && 
+        ex.muscle === muscle
+      );
+      
+      if (existingIdx === -1) {
+        customExercises.push({
+          name: entry.name,
+          muscle: muscle,
+          specificDay: targetDay,
+          sets: entry.sets
+        });
+      } else {
+        customExercises[existingIdx].sets = entry.sets;
+      }
     });
 
+    persistHiddenExercises();
     persistCustomExercises();
     triggerSync();
     addExerciseModal.classList.remove("active");
-    saveMessage.textContent = "Custom exercise added!";
+    saveMessage.textContent = "Exercises saved to workout day!";
     saveMessage.style.color = "var(--green)";
     renderWorkoutDay();
   });
