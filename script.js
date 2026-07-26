@@ -230,6 +230,34 @@ function renderCalendar() {
   });
 }
 
+/**
+ * Look up the most recent recorded lift for a specific exercise & set prior to a given date.
+ */
+function getMostRecentPreviousLift(exerciseName, setNumber, beforeDateStr) {
+  if (!historicalLog) return null;
+  const validDates = Object.keys(historicalLog)
+    .filter(d => d < beforeDateStr && historicalLog[d] && historicalLog[d][exerciseName] && historicalLog[d][exerciseName][setNumber])
+    .sort()
+    .reverse();
+
+  if (validDates.length > 0) {
+    const lastDate = validDates[0];
+    const entry = historicalLog[lastDate][exerciseName][setNumber];
+    if (entry && (entry.weight !== "0" || entry.reps !== "0")) {
+      const parts = lastDate.split("-");
+      const dObj = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+      const dateLabel = dObj.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+      return {
+        weight: entry.weight,
+        reps: entry.reps,
+        dateStamp: lastDate,
+        dateLabel: dateLabel
+      };
+    }
+  }
+  return null;
+}
+
 function renderWorkoutDay() {
   const dayConfig = workoutPlan[selectedDayIndex];
   const dayExercises = getExercisesForDay(dayConfig);
@@ -254,12 +282,19 @@ function renderWorkoutDay() {
   }
 
   const todayStr = new Date().toISOString().split("T")[0];
+  const todayDayName = new Date().toLocaleDateString("en-US", { weekday: "long" });
+  const isTodaySelected = (dayConfig.day === todayDayName);
+  const TEN_MINUTES_MS = 10 * 60 * 1000;
 
   dayExercises.forEach((exercise) => {
     const card = document.createElement("article");
     card.className = "exercise-card";
 
     const setsCount = parseInt(exercise.sets, 10) || 3;
+    let isDayLocked = !isTodaySelected;
+    let minElapsedMins = 999;
+    let hasLoggedToday = false;
+
     const rows = Array.from({ length: setsCount }, (_, index) => {
       const setNumber = index + 1;
       const logData = workoutHistory?.[dayConfig.day]?.[exercise.name]?.[setNumber];
@@ -268,24 +303,44 @@ function renderWorkoutDay() {
       let displayReps = "";
       let previousText = "No previous data";
 
-      if (logData) {
-        if (logData.dateStamp === todayStr) {
-          displayWeight = logData.weight === "0" ? "" : logData.weight;
-          displayReps = logData.reps === "0" ? "" : logData.reps;
-          if (logData.prevWeight || logData.prevReps) {
-            previousText = `${logData.prevWeight || "-"} kg × ${logData.prevReps || "-"} reps`;
+      // 1. Determine Previous Data by querying historicalLog for most recent past lift
+      const prevLift = getMostRecentPreviousLift(exercise.name, setNumber, todayStr);
+      if (prevLift) {
+        previousText = `${prevLift.weight} kg × ${prevLift.reps} reps (${prevLift.dateLabel})`;
+      }
+
+      let setDisabled = isDayLocked;
+
+      if (logData && logData.dateStamp === todayStr) {
+        hasLoggedToday = true;
+        displayWeight = logData.weight === "0" ? "" : logData.weight;
+        displayReps = logData.reps === "0" ? "" : logData.reps;
+
+        if (!prevLift && (logData.prevWeight || logData.prevReps)) {
+          previousText = `${logData.prevWeight || "-"} kg × ${logData.prevReps || "-"} reps`;
+        }
+
+        // 2. 10-Minute Lock Check
+        const savedTime = logData.saveTimestamp || logData.timestamp;
+        if (savedTime) {
+          const elapsedMs = Date.now() - savedTime;
+          const elapsedMins = elapsedMs / (1000 * 60);
+          if (elapsedMins < minElapsedMins) minElapsedMins = elapsedMins;
+
+          if (elapsedMins >= 10) {
+            setDisabled = true; // Locked after 10 mins!
+          } else {
+            setDisabled = false; // Within 10 min window -> Editable!
           }
         } else {
-          if (logData.weight || logData.reps) {
-            previousText = `${logData.weight || "-"} kg × ${logData.reps || "-"} reps`;
-          }
+          setDisabled = true;
         }
       }
 
       return `
         <div class="set-row">
           <div class="set-badge">Set ${setNumber}</div>
-          <div class="previous-display">${previousText}</div>
+          <div class="previous-display" title="Previous recorded lift">${previousText}</div>
           <input
             class="field-input js-weight-input"
             type="number"
@@ -293,6 +348,7 @@ function renderWorkoutDay() {
             step="0.5"
             placeholder="New weight"
             value="${displayWeight}"
+            ${setDisabled ? "disabled" : ""}
             data-day="${dayConfig.day}"
             data-exercise="${exercise.name}"
             data-set="${setNumber}"
@@ -304,6 +360,7 @@ function renderWorkoutDay() {
             step="1"
             placeholder="New reps"
             value="${displayReps}"
+            ${setDisabled ? "disabled" : ""}
             data-day="${dayConfig.day}"
             data-exercise="${exercise.name}"
             data-set="${setNumber}"
@@ -312,10 +369,26 @@ function renderWorkoutDay() {
       `;
     }).join("");
 
+    // Lock status pill
+    let exerciseStatusPillHtml = "";
+    if (!isTodaySelected) {
+      exerciseStatusPillHtml = `<span class="lock-status-pill locked" title="Log is locked until ${dayConfig.day}">🔒 Locked (${dayConfig.day})</span>`;
+    } else if (hasLoggedToday) {
+      if (minElapsedMins >= 10) {
+        exerciseStatusPillHtml = `<span class="lock-status-pill locked" title="Logged & locked after 10 minutes">🔒 Logged & Locked</span>`;
+      } else {
+        const minsLeft = Math.max(1, Math.ceil(10 - minElapsedMins));
+        exerciseStatusPillHtml = `<span class="lock-status-pill editing" title="Editable for 10 minutes after saving">⏱️ Editable (${minsLeft}m left)</span>`;
+      }
+    } else {
+      exerciseStatusPillHtml = `<span class="lock-status-pill active" title="Ready to record today's workout">💪 Ready for today</span>`;
+    }
+
     card.innerHTML = `
       <div class="exercise-top">
-        <div>
+        <div style="display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;">
           <h3 class="exercise-title">${exercise.name}</h3>
+          ${exerciseStatusPillHtml}
         </div>
         <div>
           <span class="exercise-tag">${exercise.muscle}</span>
@@ -350,6 +423,8 @@ function saveWorkout() {
   }
 
   const prsDetected = [];
+  const saveTime = Date.now();
+  const todayStr = new Date().toISOString().split("T")[0];
 
   setRows.forEach((row) => {
     const weightInput = row.querySelector(".js-weight-input");
@@ -363,8 +438,6 @@ function saveWorkout() {
     const reps = repsInput.value.trim();
 
     if (!exerciseName || !setNumber || (!weight && !reps)) return;
-
-    const todayStr = new Date().toISOString().split("T")[0];
 
     if (!workoutHistory[dayConfig.day][exerciseName]) {
       workoutHistory[dayConfig.day][exerciseName] = {};
@@ -383,6 +456,7 @@ function saveWorkout() {
       dateStamp: todayStr,
       weight: weight || "0",
       reps: reps || "0",
+      saveTimestamp: saveTime,
       prevWeight: prevW,
       prevReps: prevR
     };
@@ -391,7 +465,8 @@ function saveWorkout() {
     if (!historicalLog[todayStr][exerciseName]) historicalLog[todayStr][exerciseName] = {};
     historicalLog[todayStr][exerciseName][setNumber] = {
       weight: weight || "0",
-      reps: reps || "0"
+      reps: reps || "0",
+      saveTimestamp: saveTime
     };
 
     if (!attendanceHistory[todayStr]) attendanceHistory[todayStr] = 0;
@@ -407,7 +482,7 @@ function saveWorkout() {
   persistHistory();
   persistHistoricalLog();
   persistAttendanceHistory();
-  saveMessage.textContent = `Workout saved for ${dayConfig.day}. New data will appear as previous data next time.`;
+  saveMessage.textContent = `Workout saved! Entry can be edited for 10 mins. Afterwards, it will lock until your next ${dayConfig.day} session.`;
   saveMessage.style.color = "#36e28a";
   renderWorkoutDay();
 
@@ -423,6 +498,16 @@ function saveWorkout() {
   // Trigger Google Drive Cloud Sync
   triggerSync();
 }
+
+// Auto-refresh lock status countdown every 30 seconds
+setInterval(() => {
+  if (!document.hidden) {
+    const todayDayName = new Date().toLocaleDateString("en-US", { weekday: "long" });
+    if (workoutPlan[selectedDayIndex] && workoutPlan[selectedDayIndex].day === todayDayName) {
+      renderWorkoutDay();
+    }
+  }
+}, 30000);
 
 if (saveWorkoutBtn) {
   saveWorkoutBtn.addEventListener("click", saveWorkout);
