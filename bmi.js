@@ -128,77 +128,141 @@ function renderBMIPanel() {
   const target = loadBMITarget();
   const latest = history[history.length - 1];
 
+  const info = latest ? getSuggestions(latest.bmi, profile.age, latest.heightM, latest.weightKg) : null;
+  const percent = info ? Math.min(100, Math.max(0, ((latest.bmi - 15) / (35 - 15)) * 100)) : 0;
+  const dashArray = 2 * Math.PI * 50; // 314.16
+  const dashOffset = dashArray - (dashArray * percent) / 100;
+  const color = info ? info.category.color : "var(--muted)";
+  const label = info ? info.category.label : "Healthy";
+
+  // Weight, body fat, and muscle mass defaults or stored values
+  const weightStr = latest ? `${(latest.weightKg * (profile.weightUnit === "lbs" ? 2.20462 : 1)).toFixed(1)} ${profile.weightUnit || "kg"}` : "--";
+  const bodyFatStr = profile.bodyFat ? `${profile.bodyFat}%` : "--";
+  const muscleMassStr = profile.muscleMass ? `${profile.muscleMass} kg` : "--";
+
   panel.innerHTML = `
-    <p class="panel-kicker">BMI Tracker</p>
-    <h2 style="margin:0 0 0.6rem; font-size: 1.2rem;">Body Mass Index</h2>
-
-    <div class="bmi-inputs">
-      <div class="bmi-row">
-        <label>Weight</label>
-        <div class="bmi-input-group">
-          <input type="number" id="bmiWeight" step="0.1" placeholder="0"
-            value="${profile.weight || ''}" class="bmi-input">
-          <select id="bmiWeightUnit" class="bmi-select">
-            <option value="kg" ${profile.weightUnit !== "lbs" ? "selected" : ""}>kg</option>
-            <option value="lbs" ${profile.weightUnit === "lbs" ? "selected" : ""}>lbs</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="bmi-row">
-        <label>Height</label>
-        <div class="bmi-input-group" id="heightGroup">
-          <input type="number" id="bmiHeight" step="0.1" placeholder="0"
-            value="${profile.height || ''}" class="bmi-input">
-          <input type="number" id="bmiHeightIn" step="1" placeholder="in"
-            value="${profile.heightInches || ''}" class="bmi-input bmi-input-in"
-            style="${profile.heightUnit === 'ft' ? '' : 'display:none;'}">
-          <select id="bmiHeightUnit" class="bmi-select">
-            <option value="cm" ${profile.heightUnit === "cm" ? "selected" : ""}>cm</option>
-            <option value="ft" ${profile.heightUnit === "ft" ? "selected" : ""}>ft+in</option>
-            <option value="in" ${profile.heightUnit === "in" ? "selected" : ""}>in</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="bmi-row">
-        <label>Age <span class="muted-text" style="font-weight:400; font-size:0.72rem;">(optional)</span></label>
-        <input type="number" id="bmiAge" min="5" max="100" placeholder="e.g. 22"
-          value="${profile.age || ''}" class="bmi-input" style="width:100%;">
-      </div>
-
-      <div class="bmi-row">
-        <label>Target Weight (kg) <span class="muted-text" style="font-weight:400; font-size:0.72rem;">(optional)</span></label>
-        <input type="number" id="bmiTargetWeight" step="0.1" placeholder="e.g. 70"
-          value="${target?.weight || ''}" class="bmi-input" style="width:100%;">
-      </div>
-
-      <button class="primary-btn" id="bmiCalcBtn" style="width:100%; margin-top:0.4rem;">
-        Calculate & Save
-      </button>
+    <div class="body-overview-header">
+      <p class="panel-kicker">Body Overview</p>
+      <div class="overview-dropdown-chip">Overview ▾</div>
     </div>
 
-    <div id="bmiResult" class="bmi-result">
-      ${latest ? renderBMIResult(latest, profile.age, target) : '<p class="muted-text" style="font-size:0.82rem; text-align:center; margin:0.8rem 0 0;">Enter your stats to see your BMI.</p>'}
-    </div>
-
-    ${latest ? renderNutritionBlock(latest.weightKg) : ''}
-
-    ${history.length > 1 ? `
-      <div class="bmi-graph-wrap">
-        <p class="panel-kicker" style="margin:0 0 0.4rem;">Progress</p>
-        <canvas id="bmiMiniChart" width="280" height="90"></canvas>
-        <div class="bmi-graph-legend">
-          <span><i style="background:#36e28a;"></i>BMI</span>
-          <span><i style="background:#4da3ff;"></i>Weight (kg)</span>
+    <!-- Circular SVG Progress Gauge -->
+    <div class="bmi-gauge-container">
+      <div class="bmi-gauge-circle">
+        <svg width="130" height="130" viewBox="0 0 120 120">
+          <circle cx="60" cy="60" r="50" class="gauge-track" stroke="rgba(255,255,255,0.03)" stroke-width="8" fill="transparent" />
+          <circle cx="60" cy="60" r="50" class="gauge-fill" stroke="${color}" stroke-width="8" fill="transparent"
+            stroke-dasharray="${dashArray}" stroke-dashoffset="${dashOffset}" stroke-linecap="round" transform="rotate(-90 60 60)" />
+        </svg>
+        <div class="gauge-center-text">
+          <span class="bmi-large-value" style="color: ${color};">${latest ? latest.bmi.toFixed(1) : "--"}</span>
+          <span class="bmi-label-sub">BMI</span>
+          <span class="bmi-status-badge" style="color: ${color}; background: ${color}12;">${latest ? label : "Enter Stats"}</span>
         </div>
       </div>
+    </div>
+
+    <!-- Metrics Table -->
+    <div class="body-metrics-table">
+      <div class="metrics-row">
+        <span class="metric-label">Weight</span>
+        <span class="metric-val">${weightStr}</span>
+      </div>
+      <div class="metrics-row">
+        <span class="metric-label">Body Fat</span>
+        <span class="metric-val">${bodyFatStr}</span>
+      </div>
+      <div class="metrics-row">
+        <span class="metric-label">Muscle Mass</span>
+        <span class="metric-val">${muscleMassStr}</span>
+      </div>
+    </div>
+
+    <!-- Update Button -->
+    <button class="update-metrics-btn" id="updateMetricsBtn">Update Metrics</button>
+
+    <!-- Collapsible Input Fields -->
+    <div class="bmi-inputs-collapsible" id="bmiInputsCollapsible">
+      <div class="bmi-inputs-inner">
+        <div class="bmi-row">
+          <label>Weight</label>
+          <div class="bmi-input-group">
+            <input type="number" id="bmiWeight" step="0.1" placeholder="Weight"
+              value="${profile.weight || ''}" class="bmi-input">
+            <select id="bmiWeightUnit" class="bmi-select">
+              <option value="kg" ${profile.weightUnit !== "lbs" ? "selected" : ""}>kg</option>
+              <option value="lbs" ${profile.weightUnit === "lbs" ? "selected" : ""}>lbs</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="bmi-row">
+          <label>Height</label>
+          <div class="bmi-input-group" id="heightGroup">
+            <input type="number" id="bmiHeight" step="0.1" placeholder="Height"
+              value="${profile.height || ''}" class="bmi-input">
+            <input type="number" id="bmiHeightIn" step="1" placeholder="in"
+              value="${profile.heightInches || ''}" class="bmi-input bmi-input-in"
+              style="${profile.heightUnit === 'ft' ? '' : 'display:none;'}">
+            <select id="bmiHeightUnit" class="bmi-select">
+              <option value="cm" ${profile.heightUnit === "cm" ? "selected" : ""}>cm</option>
+              <option value="ft" ${profile.heightUnit === "ft" ? "selected" : ""}>ft+in</option>
+              <option value="in" ${profile.heightUnit === "in" ? "selected" : ""}>in</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="bmi-row-half-group">
+          <div class="bmi-row">
+            <label>Body Fat %</label>
+            <input type="number" id="bmiBodyFat" step="0.1" placeholder="e.g. 12"
+              value="${profile.bodyFat || ''}" class="bmi-input">
+          </div>
+          <div class="bmi-row">
+            <label>Muscle Mass (kg)</label>
+            <input type="number" id="bmiMuscleMass" step="0.1" placeholder="e.g. 62"
+              value="${profile.muscleMass || ''}" class="bmi-input">
+          </div>
+        </div>
+
+        <div class="bmi-row-half-group">
+          <div class="bmi-row">
+            <label>Age</label>
+            <input type="number" id="bmiAge" min="5" max="100" placeholder="Age"
+              value="${profile.age || ''}" class="bmi-input">
+          </div>
+          <div class="bmi-row">
+            <label>Target (kg)</label>
+            <input type="number" id="bmiTargetWeight" step="0.1" placeholder="Target"
+              value="${target?.weight || ''}" class="bmi-input">
+          </div>
+        </div>
+
+        <button class="primary-btn" id="bmiCalcBtn" style="width:100%; margin-top:0.6rem; border-radius: 12px; padding: 0.6rem;">
+          Save Metrics
+        </button>
+
+        ${history.length > 0 ? `
+          <button class="backup-btn danger" id="bmiClearBtn" style="width:100%; margin-top:0.4rem; font-size:0.75rem; border-radius: 12px; padding: 0.5rem;">
+            Clear History
+          </button>
+        ` : ''}
+      </div>
+    </div>
+
+    <!-- Dynamic details shown at bottom of Card if latest exists -->
+    ${latest ? `
+      <div id="bmiResult" class="bmi-result">
+        ${renderBMIResult(latest, profile.age, target)}
+      </div>
+      ${renderNutritionBlock(latest.weightKg)}
     ` : ''}
 
-    ${history.length > 0 ? `
-      <button class="backup-btn danger" id="bmiClearBtn" style="width:100%; margin-top:0.6rem; font-size:0.75rem;">
-        Clear BMI History
-      </button>
+    ${history.length > 1 ? `
+      <div class="bmi-graph-wrap" style="margin-top: 1rem; border-top: 1px solid var(--border); padding-top: 1rem;">
+        <p class="panel-kicker" style="margin:0 0 0.4rem;">Trend History</p>
+        <canvas id="bmiMiniChart" width="280" height="90"></canvas>
+      </div>
     ` : ''}
   `;
 
@@ -208,15 +272,13 @@ function renderBMIPanel() {
 
 function renderBMIResult(latest, age, target) {
   const info = getSuggestions(latest.bmi, age, latest.heightM, latest.weightKg);
-  const percent = Math.min(100, Math.max(0, ((latest.bmi - 15) / (35 - 15)) * 100));
-
   let targetHTML = "";
   if (target && target.weight) {
     const diff = +(latest.weightKg - target.weight).toFixed(1);
     const direction = diff > 0 ? "lose" : diff < 0 ? "gain" : "maintain";
     const abs = Math.abs(diff);
     targetHTML = `
-      <div class="bmi-target-row">
+      <div class="bmi-target-row" style="margin-top: 0.75rem;">
         <span class="bmi-target-label">🎯 Target: ${target.weight} kg</span>
         <span class="bmi-target-diff ${direction}">
           ${abs === 0 ? "Reached! 🏆" : `${direction} ${abs} kg`}
@@ -226,29 +288,11 @@ function renderBMIResult(latest, age, target) {
   }
 
   return `
-    <div class="bmi-value-card" style="border-color: ${info.category.color}44;">
-      <div class="bmi-value-top">
-        <div>
-          <span class="bmi-big-number" style="color:${info.category.color};">${latest.bmi.toFixed(1)}</span>
-          <span class="bmi-unit">BMI</span>
-        </div>
-        <span class="bmi-badge" style="background:${info.category.color}22; color:${info.category.color};">
-          ${info.category.label}
-        </span>
-      </div>
-
-      <div class="bmi-scale-bar">
-        <div class="bmi-scale-marker" style="left:${percent}%;"></div>
-      </div>
-      <div class="bmi-scale-labels">
-        <span>15</span><span>18.5</span><span>25</span><span>30</span><span>35+</span>
-      </div>
-
+    <div class="bmi-value-card" style="border: none; background: transparent; padding: 0; box-shadow: none; margin-top: 0.5rem;">
       ${targetHTML}
-
-      <p class="bmi-action">${info.actionText}</p>
-      <ul class="bmi-suggestions">
-        ${info.suggestions.map(s => `<li>${s}</li>`).join("")}
+      <p class="bmi-action" style="margin-top: 0.5rem;">${info.actionText}</p>
+      <ul class="bmi-suggestions" style="margin-top: 0.5rem;">
+        ${info.suggestions.slice(0, 2).map(s => `<li>${s}</li>`).join("")}
       </ul>
     </div>
   `;
@@ -442,10 +486,19 @@ function attachBMIHandlers() {
   const heightIn = document.getElementById("bmiHeightIn");
   const calcBtn = document.getElementById("bmiCalcBtn");
   const clearBtn = document.getElementById("bmiClearBtn");
+  const updateBtn = document.getElementById("updateMetricsBtn");
+  const collapsible = document.getElementById("bmiInputsCollapsible");
 
   if (heightUnit && heightIn) {
     heightUnit.addEventListener("change", () => {
       heightIn.style.display = heightUnit.value === "ft" ? "" : "none";
+    });
+  }
+
+  if (updateBtn && collapsible) {
+    updateBtn.addEventListener("click", () => {
+      collapsible.classList.toggle("expanded");
+      updateBtn.textContent = collapsible.classList.contains("expanded") ? "Cancel Update" : "Update Metrics";
     });
   }
 
@@ -458,6 +511,8 @@ function attachBMIHandlers() {
       const heightUnitVal = document.getElementById("bmiHeightUnit").value;
       const age = document.getElementById("bmiAge").value;
       const targetWeight = document.getElementById("bmiTargetWeight").value;
+      const bodyFat = document.getElementById("bmiBodyFat").value;
+      const muscleMass = document.getElementById("bmiMuscleMass").value;
 
       if (!weight || !height) {
         alert("Please enter weight and height.");
@@ -476,7 +531,7 @@ function attachBMIHandlers() {
 
       saveBMIProfile({
         weight, weightUnit, height, heightUnit: heightUnitVal,
-        heightInches: heightIn, age
+        heightInches: heightIn, age, bodyFat, muscleMass
       });
 
       if (targetWeight) {
@@ -506,6 +561,11 @@ function attachBMIHandlers() {
     clearBtn.addEventListener("click", () => {
       if (confirm("Delete all BMI history? This cannot be undone.")) {
         saveBMIHistory([]);
+        // Clear cached profile body fat / muscle mass
+        const profile = loadBMIProfile();
+        delete profile.bodyFat;
+        delete profile.muscleMass;
+        saveBMIProfile(profile);
         triggerSync();
         renderBMIPanel();
       }

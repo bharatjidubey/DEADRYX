@@ -1273,3 +1273,28 @@ const QUOTES = [
   // Cycle every 21 seconds
   setInterval(cycleQuote, INTERVAL);
 })();
+
+// Settings Dropdown Modal Toggle
+document.addEventListener("DOMContentLoaded", () => {
+  const profileToggle = document.getElementById("profileToggle");
+  const closeSettingsBtn = document.getElementById("closeSettingsBtn");
+  const settingsModal = document.getElementById("settingsModal");
+
+  if (profileToggle && settingsModal) {
+    profileToggle.addEventListener("click", (e) => {
+      e.stopPropagation();
+      settingsModal.classList.add("active");
+    });
+  }
+  if (closeSettingsBtn && settingsModal) {
+    closeSettingsBtn.addEventListener("click", () => {
+      settingsModal.classList.remove("active");
+    });
+  }
+  // Click outside to close modal
+  window.addEventListener("click", (e) => {
+    if (e.target === settingsModal) {
+      settingsModal.classList.remove("active");
+    }
+  });
+});

@@ -86,10 +86,17 @@ function exportAllData() {
 
 function importAllData(file) {
   return new Promise((resolve, reject) => {
+    const MAX_IMPORT_SIZE = 5 * 1024 * 1024; // 5MB limit
+    if (!file || file.size > MAX_IMPORT_SIZE) {
+      return reject(new Error("File exceeds maximum allowed import size (5MB)."));
+    }
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
         const data = JSON.parse(e.target.result);
+        if (!data || typeof data !== "object") {
+          return reject(new Error("Invalid backup file format."));
+        }
         if (!data._meta || data._meta.app !== "DEADRYX") {
           if (!confirm("This file doesn't look like a DEADRYX backup. Import anyway?")) {
             return reject(new Error("Import cancelled"));
@@ -98,7 +105,8 @@ function importAllData(file) {
         let imported = 0;
         BACKUP_KEYS.forEach(key => {
           if (data[key] !== undefined) {
-            localStorage.setItem(key, data[key]);
+            const val = typeof data[key] === "string" ? data[key] : JSON.stringify(data[key]);
+            localStorage.setItem(key, val);
             imported++;
           }
         });

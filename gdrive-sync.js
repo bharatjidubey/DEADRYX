@@ -6,6 +6,30 @@ const API_KEY = ""; // Not strictly required if using OAuth token flow for Drive
 const DISCOVERY_DOC = "https://www.googleapis.com/discovery/v1/apis/drive/v3/rest";
 const SCOPES = "https://www.googleapis.com/auth/drive.appdata https://www.googleapis.com/auth/userinfo.profile";
 
+// ================== SECURITY HELPERS ==================
+
+/** Sanitize a URL to only allow https from Google domains (prevents XSS via tampered localStorage) */
+function sanitizeGoogleImageUrl(url) {
+  if (!url || typeof url !== 'string') return '';
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:') return '';
+    // Only allow Google user content domains
+    if (!parsed.hostname.endsWith('.googleusercontent.com') && !parsed.hostname.endsWith('.google.com')) return '';
+    return parsed.href;
+  } catch {
+    return '';
+  }
+}
+
+/** HTML-encode a string to prevent XSS when used in innerHTML */
+function escapeHtml(str) {
+  if (!str || typeof str !== 'string') return '';
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
 let tokenClient;
 let gapiInited = false;
 let gisInited = false;
@@ -72,7 +96,9 @@ function maybeEnableButtons() {
 function handleAuthClick() {
   tokenClient.callback = async (resp) => {
     if (resp.error !== undefined) {
-      throw (resp);
+      console.error('Google Auth Error:', resp.error, resp.error_description || '');
+      updateSyncStatus('Auth Error');
+      return;
     }
     
     // Save token to localStorage
@@ -99,25 +125,28 @@ function handleAuthClick() {
 }
 
 function handleSignoutClick() {
-  const token = gapi.client.getToken();
+  const token = gapi.client ? gapi.client.getToken() : null;
   if (token !== null) {
     google.accounts.oauth2.revoke(token.access_token);
     gapi.client.setToken('');
-    localStorage.removeItem("gdrive_access_token");
-
-    const connectBtn = document.getElementById("gdriveConnectBtn");
-    if (connectBtn) connectBtn.style.display = "inline-flex";
-    const disconnectBtn = document.getElementById("gdriveDisconnectBtn");
-    if (disconnectBtn) disconnectBtn.style.display = "none";
-
-    // Hide profile info
-    const profileDiv = document.getElementById("gdriveProfileInfo");
-    if (profileDiv) profileDiv.style.display = "none";
-
-    updateSyncStatus("Disconnected");
-    syncFileId = null;
-    memoriesFolderId = null;
   }
+  localStorage.removeItem("gdrive_access_token");
+  localStorage.removeItem("gdrive_user_profile");
+
+  const connectBtn = document.getElementById("gdriveConnectBtn");
+  if (connectBtn) connectBtn.style.display = "inline-flex";
+  const disconnectBtn = document.getElementById("gdriveDisconnectBtn");
+  if (disconnectBtn) disconnectBtn.style.display = "none";
+
+  // Hide profile info
+  const profileDiv = document.getElementById("gdriveProfileInfo");
+  if (profileDiv) profileDiv.style.display = "none";
+
+  updateSyncStatus("Disconnected");
+  syncFileId = null;
+  memoriesFolderId = null;
+
+  updateSidebarProfileUI(null);
 }
 
 async function fetchUserInfo() {
@@ -127,6 +156,8 @@ async function fetchUserInfo() {
     });
     if (res.ok) {
       const data = await res.json();
+      localStorage.setItem("gdrive_user_profile", JSON.stringify(data));
+
       const profileDiv = document.getElementById("gdriveProfileInfo");
       if (profileDiv) {
         profileDiv.style.display = "flex";
@@ -141,11 +172,91 @@ async function fetchUserInfo() {
       if (connectBtn) connectBtn.style.display = "none";
       const disconnectBtn = document.getElementById("gdriveDisconnectBtn");
       if (disconnectBtn) disconnectBtn.style.display = "inline-flex";
+
+      updateSidebarProfileUI(data);
     }
   } catch (err) {
     console.error("Failed to fetch user info", err);
   }
 }
+
+function updateSidebarProfileUI(data) {
+  const avatarEl = document.getElementById("sidebarAvatar");
+  const nameEl = document.getElementById("sidebarUserName");
+  const roleEl = document.getElementById("sidebarUserRole");
+  const profileToggle = document.getElementById("profileToggle");
+
+  if (!avatarEl || !nameEl || !roleEl) return;
+
+  if (data && (data.name || data.picture)) {
+    // User Signed In
+    nameEl.textContent = data.name || "User";
+    roleEl.textContent = data.email || "Google Synced";
+    
+    if (data.picture) {
+      const safePicUrl = sanitizeGoogleImageUrl(data.picture);
+      const safeName = escapeHtml(data.name || 'User');
+      if (safePicUrl) {
+        avatarEl.innerHTML = `<img src="${safePicUrl}" alt="${safeName}" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover;">`;
+        avatarEl.style.background = "none";
+        avatarEl.style.padding = "0";
+      } else {
+        avatarEl.textContent = (data.name || 'U').charAt(0).toUpperCase();
+        avatarEl.style.background = "linear-gradient(135deg, var(--green), #93c5fd)";
+        avatarEl.style.color = "#0c1425";
+        avatarEl.style.padding = "";
+      }
+    } else {
+      avatarEl.textContent = (data.name || "U").charAt(0).toUpperCase();
+      avatarEl.style.background = "linear-gradient(135deg, var(--green), #93c5fd)";
+      avatarEl.style.color = "#0c1425";
+      avatarEl.style.padding = "";
+    }
+
+    if (profileToggle) {
+      profileToggle.title = "Settings & Sync";
+      profileToggle.onclick = null;
+    }
+  } else {
+    // Default Signed Out State
+    nameEl.textContent = "Sign in with Google";
+    roleEl.textContent = "Sync workout data";
+    avatarEl.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>`;
+    avatarEl.style.background = "rgba(54, 226, 138, 0.15)";
+    avatarEl.style.color = "var(--green)";
+
+    if (profileToggle) {
+      profileToggle.title = "Click to Sign in with Google";
+      profileToggle.onclick = (e) => {
+        e.stopPropagation();
+        if (typeof handleAuthClick === 'function') {
+          handleAuthClick();
+        }
+      };
+    }
+  }
+}
+
+function initSidebarProfileFromLocalStorage() {
+  const savedToken = localStorage.getItem("gdrive_access_token");
+  const savedProfile = localStorage.getItem("gdrive_user_profile");
+  
+  if (savedToken && savedProfile) {
+    try {
+      const parsedToken = JSON.parse(savedToken);
+      if (Date.now() < parsedToken.expires_at) {
+        const profile = JSON.parse(savedProfile);
+        updateSidebarProfileUI(profile);
+        return;
+      }
+    } catch (e) {
+      console.error("Error parsing saved profile", e);
+    }
+  }
+  updateSidebarProfileUI(null);
+}
+
+document.addEventListener("DOMContentLoaded", initSidebarProfileFromLocalStorage);
 
 function updateSyncStatus(msg) {
   const statusEl = document.getElementById("syncStatusMsg");

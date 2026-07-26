@@ -1,4 +1,4 @@
-const CACHE_NAME = 'deadryx-cache-v1';
+const CACHE_NAME = 'deadryx-cache-v2';
 
 // We cache core files to allow the app to work offline
 const ASSETS_TO_CACHE = [
