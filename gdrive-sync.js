@@ -94,10 +94,21 @@ function maybeEnableButtons() {
 }
 
 function handleAuthClick() {
+  if (!tokenClient) {
+    console.warn("Google Auth client not initialized yet.");
+    alert("Google Sign-In is still initializing or blocked by an ad-blocker. Please wait a second and try again.");
+    return;
+  }
+
   tokenClient.callback = async (resp) => {
     if (resp.error !== undefined) {
       console.error('Google Auth Error:', resp.error, resp.error_description || '');
-      updateSyncStatus('Auth Error');
+      if (resp.error === 'popup_closed_by_user') {
+        updateSyncStatus('Sign in cancelled');
+      } else {
+        updateSyncStatus('Auth Error: ' + resp.error);
+        alert('Google Sign-In failed: ' + (resp.error_description || resp.error));
+      }
       return;
     }
     
@@ -117,7 +128,8 @@ function handleAuthClick() {
     await fetchAndSyncFromDrive();
   };
 
-  if (gapi.client.getToken() === null) {
+  const currentToken = (typeof gapi !== 'undefined' && gapi.client) ? gapi.client.getToken() : null;
+  if (currentToken === null) {
     tokenClient.requestAccessToken({ prompt: 'consent' });
   } else {
     tokenClient.requestAccessToken({ prompt: '' });
@@ -747,9 +759,14 @@ async function performUploadToDrive() {
   }
 }
 
+// ================== INITIALIZATION ==================
+document.addEventListener("DOMContentLoaded", () => {
+  initSidebarProfileFromLocalStorage();
+});
+
 // ================== AUTO-SYNC ON RECONNECT ==================
 window.addEventListener('online', () => {
-  if (localStorage.getItem("gdrive_access_token") && gapi.client && gapi.client.getToken()) {
+  if (localStorage.getItem("gdrive_access_token") && gapi && gapi.client && gapi.client.getToken()) {
     console.log("Internet reconnected. Syncing to Drive...");
     fetchAndSyncFromDrive();
   }
