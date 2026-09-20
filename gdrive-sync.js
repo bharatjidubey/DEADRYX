@@ -39,26 +39,46 @@ let memoriesFolderId = null;
 const SYNC_FILENAME = "deadryx_sync_data.json";
 const MEMORIES_FOLDER_NAME = "DEADRYX_Memories";
 
+function ensureTokenClient() {
+  if (tokenClient) return tokenClient;
+
+  if (typeof google !== 'undefined' && google.accounts && google.accounts.oauth2) {
+    try {
+      tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: CLIENT_ID,
+        scope: SCOPES,
+        callback: '',
+      });
+      gisInited = true;
+      maybeEnableButtons();
+      return tokenClient;
+    } catch (e) {
+      console.error("Error creating Google OAuth Token Client:", e);
+    }
+  }
+  return null;
+}
+
 function gapiLoaded() {
-  gapi.load('client', initializeGapiClient);
+  if (typeof gapi !== 'undefined') {
+    gapi.load('client', initializeGapiClient);
+  }
 }
 
 async function initializeGapiClient() {
-  await gapi.client.init({
-    discoveryDocs: [DISCOVERY_DOC],
-  });
-  gapiInited = true;
-  maybeEnableButtons();
+  try {
+    await gapi.client.init({
+      discoveryDocs: [DISCOVERY_DOC],
+    });
+    gapiInited = true;
+    maybeEnableButtons();
+  } catch (e) {
+    console.error("GAPI Client init error:", e);
+  }
 }
 
 function gisLoaded() {
-  tokenClient = google.accounts.oauth2.initTokenClient({
-    client_id: CLIENT_ID,
-    scope: SCOPES,
-    callback: '', // defined later
-  });
-  gisInited = true;
-  maybeEnableButtons();
+  ensureTokenClient();
 }
 
 function maybeEnableButtons() {
@@ -93,21 +113,72 @@ function maybeEnableButtons() {
   }
 }
 
-function handleAuthClick() {
-  if (!tokenClient) {
-    console.warn("Google Auth client not initialized yet.");
-    alert("Google Sign-In is still initializing or blocked by an ad-blocker. Please wait a second and try again.");
+let authRetryCount = 0;
+
+async function handleAuthClick() {
+  const client = ensureTokenClient();
+
+  if (!client) {
+    if (typeof showToast === 'function') {
+      showToast("Initializing Google Sign-In...", "info");
+    }
+
+    // Dynamically inject scripts if missing
+    if (!document.querySelector('script[src*="accounts.google.com/gsi/client"]')) {
+      const s = document.createElement('script');
+      s.src = "https://accounts.google.com/gsi/client";
+      s.async = true;
+      s.defer = true;
+      s.onload = () => gisLoaded();
+      document.head.appendChild(s);
+    }
+
+    if (!document.querySelector('script[src*="apis.google.com/js/api.js"]')) {
+      const s2 = document.createElement('script');
+      s2.src = "https://apis.google.com/js/api.js";
+      s2.async = true;
+      s2.defer = true;
+      s2.onload = () => gapiLoaded();
+      document.head.appendChild(s2);
+    }
+
+    // Auto-retry polling
+    if (authRetryCount < 8) {
+      authRetryCount++;
+      setTimeout(() => {
+        if (ensureTokenClient()) {
+          authRetryCount = 0;
+          handleAuthClick();
+        } else {
+          handleAuthClick();
+        }
+      }, 400);
+      return;
+    }
+
+    authRetryCount = 0;
+    if (typeof showToast === 'function') {
+      showToast("Google Sign-In script is blocked by an ad-blocker.", "error");
+    } else {
+      alert("Google Sign-In is blocked by an ad-blocker or browser extension. Please pause ad-blocker on deadryx.me and refresh.");
+    }
     return;
   }
 
-  tokenClient.callback = async (resp) => {
+  authRetryCount = 0;
+
+  client.callback = async (resp) => {
     if (resp.error !== undefined) {
       console.error('Google Auth Error:', resp.error, resp.error_description || '');
       if (resp.error === 'popup_closed_by_user') {
         updateSyncStatus('Sign in cancelled');
       } else {
         updateSyncStatus('Auth Error: ' + resp.error);
-        alert('Google Sign-In failed: ' + (resp.error_description || resp.error));
+        if (typeof showToast === 'function') {
+          showToast('Google Sign-In failed: ' + (resp.error_description || resp.error), 'error');
+        } else {
+          alert('Google Sign-In failed: ' + (resp.error_description || resp.error));
+        }
       }
       return;
     }
@@ -130,11 +201,29 @@ function handleAuthClick() {
 
   const currentToken = (typeof gapi !== 'undefined' && gapi.client) ? gapi.client.getToken() : null;
   if (currentToken === null) {
-    tokenClient.requestAccessToken({ prompt: 'consent' });
+    client.requestAccessToken({ prompt: 'consent' });
   } else {
-    tokenClient.requestAccessToken({ prompt: '' });
+    client.requestAccessToken({ prompt: '' });
   }
 }
+
+// Auto-detect if GAPI/GIS script already loaded before gdrive-sync.js loaded
+if (typeof gapi !== 'undefined' && !gapiInited) {
+  gapiLoaded();
+}
+if (typeof google !== 'undefined' && google.accounts && !gisInited) {
+  gisLoaded();
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  if (typeof gapi !== 'undefined' && !gapiInited) {
+    gapiLoaded();
+  }
+  if (typeof google !== 'undefined' && google.accounts && !gisInited) {
+    gisLoaded();
+  }
+  ensureTokenClient();
+});
 
 function handleSignoutClick() {
   const token = gapi.client ? gapi.client.getToken() : null;
@@ -186,6 +275,7 @@ async function fetchUserInfo() {
           const safePicUrl = sanitizeGoogleImageUrl(data.picture);
           if (safePicUrl) {
             profilePic.src = safePicUrl;
+            profilePic.setAttribute("referrerpolicy", "no-referrer");
           }
         }
       }
@@ -206,6 +296,7 @@ function updateSidebarProfileUI(data) {
   const nameEl = document.getElementById("sidebarUserName");
   const roleEl = document.getElementById("sidebarUserRole");
   const profileToggle = document.getElementById("profileToggle");
+  const mobileAvatarCircles = document.querySelectorAll(".avatar-circle");
 
   if (!avatarEl || !nameEl || !roleEl) return;
 
@@ -214,28 +305,36 @@ function updateSidebarProfileUI(data) {
     nameEl.textContent = data.name || "User";
     roleEl.textContent = data.email || "Google Synced";
     
+    const safeName = escapeHtml(data.name || 'User');
+    const firstInitial = (data.name || 'U').charAt(0).toUpperCase();
+
     if (data.picture) {
       const safePicUrl = sanitizeGoogleImageUrl(data.picture);
-      const safeName = escapeHtml(data.name || 'User');
       if (safePicUrl) {
-        avatarEl.innerHTML = `<img src="${safePicUrl}" alt="${safeName}" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover;">`;
+        avatarEl.innerHTML = `<img src="${safePicUrl}" alt="${safeName}" referrerpolicy="no-referrer" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover;">`;
         avatarEl.style.background = "none";
         avatarEl.style.padding = "0";
+
+        mobileAvatarCircles.forEach(el => {
+          el.innerHTML = `<img src="${safePicUrl}" alt="${safeName}" referrerpolicy="no-referrer" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover;">`;
+          el.style.background = "none";
+          el.style.padding = "0";
+        });
       } else {
-        avatarEl.textContent = (data.name || 'U').charAt(0).toUpperCase();
+        avatarEl.textContent = firstInitial;
         avatarEl.style.background = "linear-gradient(135deg, var(--green), #93c5fd)";
         avatarEl.style.color = "#0c1425";
         avatarEl.style.padding = "";
       }
     } else {
-      avatarEl.textContent = (data.name || "U").charAt(0).toUpperCase();
+      avatarEl.textContent = firstInitial;
       avatarEl.style.background = "linear-gradient(135deg, var(--green), #93c5fd)";
       avatarEl.style.color = "#0c1425";
       avatarEl.style.padding = "";
     }
 
     if (profileToggle) {
-      profileToggle.title = "Settings & Sync";
+      profileToggle.title = "Signed in as " + (data.name || "User") + " (" + (data.email || "") + ")";
       profileToggle.onclick = null;
     }
   } else {
@@ -248,25 +347,19 @@ function updateSidebarProfileUI(data) {
 
     if (profileToggle) {
       profileToggle.title = "Click to open Settings & Sign in";
-      // Don't override onclick — let the event listener in script.js open the settings modal
-      // The user can then click "Sign in with Google" inside the modal
       profileToggle.onclick = null;
     }
   }
 }
 
 function initSidebarProfileFromLocalStorage() {
-  const savedToken = localStorage.getItem("gdrive_access_token");
   const savedProfile = localStorage.getItem("gdrive_user_profile");
   
-  if (savedToken && savedProfile) {
+  if (savedProfile) {
     try {
-      const parsedToken = JSON.parse(savedToken);
-      if (Date.now() < parsedToken.expires_at) {
-        const profile = JSON.parse(savedProfile);
-        updateSidebarProfileUI(profile);
-        return;
-      }
+      const profile = JSON.parse(savedProfile);
+      updateSidebarProfileUI(profile);
+      return;
     } catch (e) {
       console.error("Error parsing saved profile", e);
     }
