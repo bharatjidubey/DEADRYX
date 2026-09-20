@@ -1,4 +1,4 @@
-const CACHE_NAME = 'deadryx-cache-v2';
+const CACHE_NAME = 'deadryx-cache-v3';
 
 // We cache core files to allow the app to work offline
 const ASSETS_TO_CACHE = [
@@ -18,6 +18,8 @@ const ASSETS_TO_CACHE = [
   './memories.js',
   './gdrive-sync.js',
   './logo.png',
+  './favicon.png',
+  './icon-192.png',
   './manifest.json'
 ];
 

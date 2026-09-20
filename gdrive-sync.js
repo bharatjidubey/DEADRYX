@@ -40,10 +40,10 @@ const SYNC_FILENAME = "deadryx_sync_data.json";
 const MEMORIES_FOLDER_NAME = "DEADRYX_Memories";
 
 function gapiLoaded() {
-  gapi.load('client', intializeGapiClient);
+  gapi.load('client', initializeGapiClient);
 }
 
-async function intializeGapiClient() {
+async function initializeGapiClient() {
   await gapi.client.init({
     discoveryDocs: [DISCOVERY_DOC],
   });
@@ -140,7 +140,7 @@ function handleSignoutClick() {
   const token = gapi.client ? gapi.client.getToken() : null;
   if (token !== null) {
     google.accounts.oauth2.revoke(token.access_token);
-    gapi.client.setToken('');
+    gapi.client.setToken(null);
   }
   localStorage.removeItem("gdrive_access_token");
   localStorage.removeItem("gdrive_user_profile");
@@ -163,8 +163,14 @@ function handleSignoutClick() {
 
 async function fetchUserInfo() {
   try {
+    const token = gapi.client ? gapi.client.getToken() : null;
+    if (!token || !token.access_token) {
+      console.warn("No valid token for fetchUserInfo");
+      return;
+    }
+
     const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-      headers: { 'Authorization': 'Bearer ' + gapi.client.getToken().access_token }
+      headers: { 'Authorization': 'Bearer ' + token.access_token }
     });
     if (res.ok) {
       const data = await res.json();
@@ -174,10 +180,13 @@ async function fetchUserInfo() {
       if (profileDiv) {
         profileDiv.style.display = "flex";
         const profileName = document.getElementById("gdriveProfileName");
-        if (profileName) profileName.textContent = data.name || "User";
+        if (profileName) profileName.textContent = escapeHtml(data.name) || "User";
         const profilePic = document.getElementById("gdriveProfilePic");
         if (profilePic && data.picture) {
-          profilePic.src = data.picture;
+          const safePicUrl = sanitizeGoogleImageUrl(data.picture);
+          if (safePicUrl) {
+            profilePic.src = safePicUrl;
+          }
         }
       }
       const connectBtn = document.getElementById("gdriveConnectBtn");
@@ -238,13 +247,10 @@ function updateSidebarProfileUI(data) {
     avatarEl.style.color = "var(--green)";
 
     if (profileToggle) {
-      profileToggle.title = "Click to Sign in with Google";
-      profileToggle.onclick = (e) => {
-        e.stopPropagation();
-        if (typeof handleAuthClick === 'function') {
-          handleAuthClick();
-        }
-      };
+      profileToggle.title = "Click to open Settings & Sign in";
+      // Don't override onclick — let the event listener in script.js open the settings modal
+      // The user can then click "Sign in with Google" inside the modal
+      profileToggle.onclick = null;
     }
   }
 }
@@ -760,9 +766,8 @@ async function performUploadToDrive() {
 }
 
 // ================== INITIALIZATION ==================
-document.addEventListener("DOMContentLoaded", () => {
-  initSidebarProfileFromLocalStorage();
-});
+// initSidebarProfileFromLocalStorage() is already called at line 271 via DOMContentLoaded
+// No duplicate initialization needed here.
 
 // ================== AUTO-SYNC ON RECONNECT ==================
 window.addEventListener('online', () => {

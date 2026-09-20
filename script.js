@@ -418,6 +418,14 @@ function saveWorkout() {
   const dayConfig = workoutPlan[selectedDayIndex];
   const setRows = document.querySelectorAll(".set-row");
 
+  // Guard: Only allow saving on today's day
+  const todayDayName = new Date().toLocaleDateString("en-US", { weekday: "long" });
+  if (dayConfig.day !== todayDayName) {
+    saveMessage.textContent = `Cannot save — today is ${todayDayName}, not ${dayConfig.day}.`;
+    saveMessage.style.color = "var(--red)";
+    return;
+  }
+
   if (!workoutHistory[dayConfig.day]) {
     workoutHistory[dayConfig.day] = {};
   }
@@ -469,8 +477,12 @@ function saveWorkout() {
       saveTimestamp: saveTime
     };
 
-    if (!attendanceHistory[todayStr]) attendanceHistory[todayStr] = 0;
-    attendanceHistory[todayStr] += 1;
+    // Attendance: only count genuinely new set entries (not re-saves)
+    const wasNewEntry = !(currentLog && currentLog.dateStamp === todayStr);
+    if (wasNewEntry) {
+      if (!attendanceHistory[todayStr]) attendanceHistory[todayStr] = 0;
+      attendanceHistory[todayStr] += 1;
+    }
 
     // 🏆 PR DETECTION
     if (typeof detectAndRecordPR === "function") {
