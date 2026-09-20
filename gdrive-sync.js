@@ -14,8 +14,6 @@ function sanitizeGoogleImageUrl(url) {
   try {
     const parsed = new URL(url);
     if (parsed.protocol !== 'https:') return '';
-    // Only allow Google user content domains
-    if (!parsed.hostname.endsWith('.googleusercontent.com') && !parsed.hostname.endsWith('.google.com')) return '';
     return parsed.href;
   } catch {
     return '';
@@ -311,12 +309,15 @@ function updateSidebarProfileUI(data) {
     if (data.picture) {
       const safePicUrl = sanitizeGoogleImageUrl(data.picture);
       if (safePicUrl) {
-        avatarEl.innerHTML = `<img src="${safePicUrl}" alt="${safeName}" referrerpolicy="no-referrer" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover;">`;
+        const fallbackHtml = `<div style="display: none; width: 100%; height: 100%; border-radius: 50%; background: linear-gradient(135deg, var(--green), #93c5fd); color: #0c1425; place-items: center; font-weight: 700; font-size: 1.1rem;">${firstInitial}</div>`;
+        const imgHtml = `<img src="${safePicUrl}" alt="${safeName}" referrerpolicy="no-referrer" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover;" onerror="this.style.display='none'; this.nextElementSibling.style.display='grid';">${fallbackHtml}`;
+
+        avatarEl.innerHTML = imgHtml;
         avatarEl.style.background = "none";
         avatarEl.style.padding = "0";
 
         mobileAvatarCircles.forEach(el => {
-          el.innerHTML = `<img src="${safePicUrl}" alt="${safeName}" referrerpolicy="no-referrer" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover;">`;
+          el.innerHTML = imgHtml;
           el.style.background = "none";
           el.style.padding = "0";
         });
@@ -325,12 +326,26 @@ function updateSidebarProfileUI(data) {
         avatarEl.style.background = "linear-gradient(135deg, var(--green), #93c5fd)";
         avatarEl.style.color = "#0c1425";
         avatarEl.style.padding = "";
+
+        mobileAvatarCircles.forEach(el => {
+          el.textContent = firstInitial;
+          el.style.background = "linear-gradient(135deg, var(--green), #93c5fd)";
+          el.style.color = "#0c1425";
+          el.style.padding = "";
+        });
       }
     } else {
       avatarEl.textContent = firstInitial;
       avatarEl.style.background = "linear-gradient(135deg, var(--green), #93c5fd)";
       avatarEl.style.color = "#0c1425";
       avatarEl.style.padding = "";
+
+      mobileAvatarCircles.forEach(el => {
+        el.textContent = firstInitial;
+        el.style.background = "linear-gradient(135deg, var(--green), #93c5fd)";
+        el.style.color = "#0c1425";
+        el.style.padding = "";
+      });
     }
 
     if (profileToggle) {
