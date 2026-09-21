@@ -1,11 +1,26 @@
-// stats.js - Weekly & Monthly summary calculations
+// stats.js - Weekly & Monthly summary calculations with memoized caching
 
-function computeStats() {
-  const history = JSON.parse(localStorage.getItem("deadryx-historical-log-v1") || "{}");
+let _cachedStats = null;
+let _lastStatsCompute = 0;
+const STATS_CACHE_TTL = 10000; // 10 seconds
+
+function computeStats(force = false) {
+  const nowMs = Date.now();
+  if (!force && _cachedStats && (nowMs - _lastStatsCompute < STATS_CACHE_TTL)) {
+    return _cachedStats;
+  }
+
+  let history = {};
+  try {
+    const raw = localStorage.getItem("deadryx-historical-log-v1");
+    if (raw) history = JSON.parse(raw);
+  } catch (e) {
+    history = {};
+  }
 
   const now = new Date();
-  const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-  const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const weekAgo = new Date(nowMs - 7 * 24 * 60 * 60 * 1000);
+  const monthAgo = new Date(nowMs - 30 * 24 * 60 * 60 * 1000);
 
   const stats = {
     week: { workouts: 0, totalVolume: 0, totalSets: 0, exercises: new Set() },
@@ -19,13 +34,18 @@ function computeStats() {
     if (!inMonth) return;
 
     const dayExercises = history[dateStr];
+    if (!dayExercises || typeof dayExercises !== "object") return;
     let dayHasData = false;
 
     Object.keys(dayExercises).forEach(exName => {
       const sets = dayExercises[exName];
+      if (!sets || typeof sets !== "object") return;
+
       Object.keys(sets).forEach(setKey => {
-        const w = parseFloat(sets[setKey].weight || "0");
-        const r = parseInt(sets[setKey].reps || "0");
+        const setObj = sets[setKey];
+        if (!setObj) return;
+        const w = parseFloat(setObj.weight || "0");
+        const r = parseInt(setObj.reps || "0", 10);
         if (w > 0 && r > 0) {
           dayHasData = true;
           const vol = w * r;
@@ -49,7 +69,7 @@ function computeStats() {
     }
   });
 
-  return {
+  _cachedStats = {
     week: {
       workouts: stats.week.workouts,
       volume: Math.round(stats.week.totalVolume),
@@ -63,12 +83,15 @@ function computeStats() {
       uniqueExercises: stats.month.exercises.size
     }
   };
+  _lastStatsCompute = nowMs;
+
+  return _cachedStats;
 }
 
-function renderStats() {
+function renderStats(force = false) {
   const container = document.getElementById("statsSummary");
   if (!container) return;
-  const s = computeStats();
+  const s = computeStats(force);
   container.innerHTML = `
     <div class="stats-tabs">
       <button class="stats-tab active" data-period="week">This Week</button>
@@ -115,4 +138,4 @@ function renderStatsPeriod(data) {
   `;
 }
 
-document.addEventListener("DOMContentLoaded", renderStats);
+document.addEventListener("DOMContentLoaded", () => renderStats(false));

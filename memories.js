@@ -90,6 +90,19 @@ const getAllMedia = () => {
   });
 };
 
+const deleteMedia = (id) => {
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction([STORE_NAME], "readwrite");
+    const store = transaction.objectStore(STORE_NAME);
+    const request = store.delete(id);
+    request.onsuccess = () => resolve(true);
+    request.onerror = () => reject(request.error);
+  });
+};
+
+// Track active Object URLs to prevent browser memory leaks
+let activeObjectUrls = [];
+
 // ==========================================
 // Upload Toast Notification System
 // ==========================================
@@ -259,6 +272,11 @@ const closeLightbox = () => {
 const renderTimeline = async () => {
   const container = document.getElementById('mediaTimeline');
   if (!container) return;
+
+  // Revoke previous object URLs to prevent browser memory leaks
+  activeObjectUrls.forEach(url => URL.revokeObjectURL(url));
+  activeObjectUrls = [];
+
   container.innerHTML = '';
 
   try {
@@ -275,6 +293,7 @@ const renderTimeline = async () => {
       card.style.animationDelay = `${index * 0.06}s`;
 
       const fileUrl = URL.createObjectURL(item.file);
+      activeObjectUrls.push(fileUrl);
 
       let mediaNode = '';
       if (item.type === 'video') {
@@ -285,6 +304,7 @@ const renderTimeline = async () => {
 
       card.innerHTML = `
         ${mediaNode}
+        <button type="button" class="media-delete-btn" title="Delete memory" data-id="${item.id}" aria-label="Delete memory">&times;</button>
         <div class="media-timestamp">${item.dateStr}</div>
       `;
 
@@ -294,7 +314,28 @@ const renderTimeline = async () => {
         timestamp.style.cursor = 'pointer';
         timestamp.addEventListener('click', () => openLightbox(fileUrl, 'video', item.dateStr));
       } else {
-        card.addEventListener('click', () => openLightbox(fileUrl, 'image', item.dateStr));
+        card.addEventListener('click', (e) => {
+          if (e.target.closest('.media-delete-btn')) return;
+          openLightbox(fileUrl, 'image', item.dateStr);
+        });
+      }
+
+      // Delete button listener
+      const deleteBtn = card.querySelector('.media-delete-btn');
+      if (deleteBtn) {
+        deleteBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          if (confirm("Are you sure you want to delete this memory?")) {
+            try {
+              await deleteMedia(item.id);
+              await renderTimeline();
+              showUploadToast('success', 'Memory Deleted', 'The item was removed from storage.', 100);
+            } catch (err) {
+              console.error("Failed to delete media", err);
+              showUploadToast('error', 'Delete Failed', 'Could not delete item from storage.');
+            }
+          }
+        });
       }
 
       container.appendChild(card);
@@ -308,6 +349,7 @@ const renderTimeline = async () => {
 window.MemoriesDB = {
   initDB,
   saveMedia,
+  deleteMedia,
   getAllMedia,
   renderTimeline
 };

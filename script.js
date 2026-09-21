@@ -337,34 +337,55 @@ function renderWorkoutDay() {
         }
       }
 
+      // Set type tag (W=Warmup, N=Normal, D=Drop, F=Failure)
+      const currentTag = logData?.tag || 'N';
+      const tagInfo = (typeof getSetTypeByKey === 'function') ? getSetTypeByKey(currentTag) : { key: 'N', label: 'Set' };
+
+      // RPE value
+      const currentRPE = logData?.rpe || '';
+      const rpeSelectHTML = (typeof getRPESelectHTML === 'function')
+        ? getRPESelectHTML(currentRPE, `data-day="${dayConfig.day}" data-exercise="${exercise.name}" data-set="${setNumber}" ${setDisabled ? 'disabled' : ''}`)
+        : '';
+
+      // Live e1RM preview
+      const e1rmVal = (displayWeight && displayReps && typeof StrengthEngine !== 'undefined')
+        ? StrengthEngine.estimated1RM(parseFloat(displayWeight), parseInt(displayReps))
+        : 0;
+      const e1rmVisible = e1rmVal > 0 ? 'visible' : '';
+
       return `
-        <div class="set-row">
-          <div class="set-badge">Set ${setNumber}</div>
+        <div class="set-row" data-set-type="${currentTag}">
+          <div class="set-badge" data-type="${currentTag}" data-day="${dayConfig.day}" data-exercise="${exercise.name}" data-set="${setNumber}" title="Click to change set type: Warmup / Normal / Drop / Failure">${tagInfo.label} ${setNumber}</div>
           <div class="previous-display" title="Previous recorded lift">${previousText}</div>
-          <input
-            class="field-input js-weight-input"
-            type="number"
-            min="0"
-            step="0.5"
-            placeholder="New weight"
-            value="${displayWeight}"
-            ${setDisabled ? "disabled" : ""}
-            data-day="${dayConfig.day}"
-            data-exercise="${exercise.name}"
-            data-set="${setNumber}"
-          />
+          <div style="display:flex; align-items:center; gap:0.25rem;">
+            <input
+              class="field-input js-weight-input"
+              type="number"
+              min="0"
+              step="0.5"
+              placeholder="Weight"
+              value="${displayWeight}"
+              ${setDisabled ? "disabled" : ""}
+              data-day="${dayConfig.day}"
+              data-exercise="${exercise.name}"
+              data-set="${setNumber}"
+            />
+            <button type="button" class="plate-calc-inline-btn" title="Open Plate Calculator with this weight" data-weight="${displayWeight}" ${setDisabled ? 'disabled' : ''}>🏋️</button>
+          </div>
           <input
             class="field-input js-reps-input"
             type="number"
             min="0"
             step="1"
-            placeholder="New reps"
+            placeholder="Reps"
             value="${displayReps}"
             ${setDisabled ? "disabled" : ""}
             data-day="${dayConfig.day}"
             data-exercise="${exercise.name}"
             data-set="${setNumber}"
           />
+          ${rpeSelectHTML}
+          <span class="e1rm-inline ${e1rmVisible}" data-exercise="${exercise.name}" data-set="${setNumber}">e1RM: ${e1rmVal ? e1rmVal + ' kg' : ''}</span>
         </div>
       `;
     }).join("");
@@ -404,6 +425,8 @@ function renderWorkoutDay() {
             <span>Previous Data</span>
             <span>New Weight</span>
             <span>New Reps</span>
+            <span>RPE</span>
+            <span>e1RM</span>
           </div>
           ${rows}
         </div>
@@ -411,6 +434,67 @@ function renderWorkoutDay() {
     `;
 
     exerciseList.appendChild(card);
+  });
+
+  // Ensure delegated events are wired up once on exerciseList
+  initExerciseListDelegation();
+}
+
+/**
+ * Event delegation for exerciseList — set-badge cycling, plate calc trigger, and live e1RM
+ */
+function initExerciseListDelegation() {
+  if (!exerciseList || exerciseList._hasDelegatedEvents) return;
+  exerciseList._hasDelegatedEvents = true;
+
+  // Delegated clicks for set badges & plate calculator buttons
+  exerciseList.addEventListener("click", (e) => {
+    // 1. Set type badge cycling (Warmup -> Normal -> Drop -> Failure)
+    const badge = e.target.closest(".set-badge[data-type]");
+    if (badge && exerciseList.contains(badge)) {
+      if (badge.closest(".set-row input:disabled") || badge.closest("[disabled]")) return;
+      const currentType = badge.getAttribute("data-type");
+      const newType = (typeof cycleSetType === "function") ? cycleSetType(currentType) : "N";
+      const newInfo = (typeof getSetTypeByKey === "function") ? getSetTypeByKey(newType) : { label: "Set" };
+      badge.setAttribute("data-type", newType);
+      badge.textContent = newInfo.label + " " + (badge.dataset.set || "");
+      const row = badge.closest(".set-row");
+      if (row) row.setAttribute("data-set-type", newType);
+      return;
+    }
+
+    // 2. Plate Calculator inline button
+    const plateBtn = e.target.closest(".plate-calc-inline-btn");
+    if (plateBtn && exerciseList.contains(plateBtn)) {
+      const weightInput = plateBtn.closest(".set-row")?.querySelector(".js-weight-input");
+      const weight = weightInput ? weightInput.value : "";
+      if (typeof PlateCalculator !== "undefined") {
+        PlateCalculator.openModal(weight || "");
+      }
+      return;
+    }
+  });
+
+  // Delegated input for live e1RM calculation
+  exerciseList.addEventListener("input", (e) => {
+    const input = e.target;
+    if (!input.classList.contains("js-weight-input") && !input.classList.contains("js-reps-input")) return;
+    const row = input.closest(".set-row");
+    if (!row) return;
+    const wInput = row.querySelector(".js-weight-input");
+    const rInput = row.querySelector(".js-reps-input");
+    const e1rmSpan = row.querySelector(".e1rm-inline");
+    if (!wInput || !rInput || !e1rmSpan || typeof StrengthEngine === "undefined") return;
+    const w = parseFloat(wInput.value);
+    const r = parseInt(rInput.value);
+    if (w > 0 && r > 0) {
+      const est = StrengthEngine.estimated1RM(w, r);
+      e1rmSpan.textContent = "e1RM: " + est + " kg";
+      e1rmSpan.classList.add("visible");
+    } else {
+      e1rmSpan.textContent = "";
+      e1rmSpan.classList.remove("visible");
+    }
   });
 }
 
@@ -445,6 +529,14 @@ function saveWorkout() {
     const weight = weightInput.value.trim();
     const reps = repsInput.value.trim();
 
+    // Collect set type tag from the badge
+    const badge = row.querySelector('.set-badge[data-type]');
+    const setTag = badge ? badge.getAttribute('data-type') : 'N';
+
+    // Collect RPE value
+    const rpeSelect = row.querySelector('.rpe-select');
+    const rpeValue = rpeSelect ? rpeSelect.value : '';
+
     if (!exerciseName || !setNumber || (!weight && !reps)) return;
 
     if (!workoutHistory[dayConfig.day][exerciseName]) {
@@ -466,7 +558,9 @@ function saveWorkout() {
       reps: reps || "0",
       saveTimestamp: saveTime,
       prevWeight: prevW,
-      prevReps: prevR
+      prevReps: prevR,
+      tag: setTag,
+      rpe: rpeValue
     };
 
     if (!historicalLog[todayStr]) historicalLog[todayStr] = {};
@@ -474,7 +568,9 @@ function saveWorkout() {
     historicalLog[todayStr][exerciseName][setNumber] = {
       weight: weight || "0",
       reps: reps || "0",
-      saveTimestamp: saveTime
+      saveTimestamp: saveTime,
+      tag: setTag,
+      rpe: rpeValue
     };
 
     // Attendance: only count genuinely new set entries (not re-saves)
@@ -507,13 +603,25 @@ function saveWorkout() {
   // Refresh stats if available
   if (typeof renderStats === "function") renderStats();
 
+  // Auto-start rest timer after saving
+  if (typeof DeadryxTimer !== 'undefined' && !DeadryxTimer.isRunning) {
+    DeadryxTimer.start();
+  }
+
   // Trigger Google Drive Cloud Sync
   triggerSync();
 }
 
-// Auto-refresh lock status countdown every 30 seconds
+// Auto-refresh lock status countdown every 30 seconds (guarded against interrupting typing/modals)
 setInterval(() => {
   if (!document.hidden) {
+    const active = document.activeElement;
+    if (active && (active.tagName === "INPUT" || active.tagName === "SELECT" || active.tagName === "TEXTAREA")) {
+      return; // Do not disrupt active input
+    }
+    const modalOpen = document.querySelector(".modal-overlay.active, .modal-overlay.show, .tools-modal.active");
+    if (modalOpen) return;
+
     const todayDayName = new Date().toLocaleDateString("en-US", { weekday: "long" });
     if (workoutPlan[selectedDayIndex] && workoutPlan[selectedDayIndex].day === todayDayName) {
       renderWorkoutDay();
@@ -1256,20 +1364,7 @@ if (toggleDeleteModeBtn) {
   });
 }
 
-// Mobile Sidebar Toggle
-const mobileMenuBtn = document.getElementById("mobileMenuBtn");
-const appSidebar = document.getElementById("appSidebar");
-const sidebarOverlay = document.getElementById("sidebarOverlay");
-
-if (mobileMenuBtn && appSidebar && sidebarOverlay) {
-  function toggleSidebar() {
-    appSidebar.classList.toggle("open");
-    sidebarOverlay.classList.toggle("active");
-  }
-
-  mobileMenuBtn.addEventListener("click", toggleSidebar);
-  sidebarOverlay.addEventListener("click", toggleSidebar);
-}
+// (Mobile Sidebar Drawer is now centrally handled in shared.js)
 
 // ============ DATA BACKUP WIRING ============
 const exportBtn = document.getElementById("exportBtn");

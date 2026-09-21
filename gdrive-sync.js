@@ -425,27 +425,29 @@ function getDriveStructuredData() {
 
   // We also bundle other app state under a special _appState key so we don't lose config
   const appState = {};
-  const BACKUP_KEYS = [
+  const keysToBackup = (typeof window !== 'undefined' && window.BACKUP_KEYS) ? window.BACKUP_KEYS : [
     "deadryx-workout-history-v1",
     "deadryx-attendance-v1",
+    "deadryx-historical-log-v1",
     "deadryx-custom-exercises-v1",
     "deadryx-hidden-exercises-v1",
     "deadryx-split-config-v1",
     "deadryx-targets-v1",
     "deadryx-notes-v1",
     "deadryx-pr-records-v1",
-    "deadryx-theme-v1",
-    "deadryx-media-sync-v1",
     "deadryx-bmi-history-v1",
     "deadryx-bmi-profile-v1",
     "deadryx-bmi-target-v1",
     "deadryx-exercise-order-v1",
-    "deadryx-last-write-v1"
+    "deadryx-media-sync-v1",
+    "deadryx-timer-prefs-v1",
+    "deadryx-last-write-v1",
+    "deadryx-theme-v1"
   ];
 
-  BACKUP_KEYS.forEach(k => {
+  keysToBackup.forEach(k => {
     const val = localStorage.getItem(k);
-    if (val) appState[k] = val;
+    if (val !== null && val !== undefined) appState[k] = val;
   });
 
   const syncTime = new Date().toISOString();

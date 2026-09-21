@@ -98,11 +98,15 @@
     <main class="main-content">
       <section class="panel day-panel">
         <div class="section-head">
-          <div>
+          <div style="flex: 1; min-width: 220px;">
             <p class="panel-kicker">Performance</p>
             <h2 id="exerciseTitle">Exercise Analysis</h2>
+            <div class="exercise-selector-bar" style="margin-top: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+              <label for="exerciseSelect" class="exercise-select-label" style="font-size: 0.82rem; font-weight: 600; color: var(--muted);">Switch Exercise:</label>
+              <select id="exerciseSelect" class="exercise-select-input" aria-label="Select exercise to analyze" style="flex: 1; max-width: 280px; padding: 0.4rem 0.75rem; border-radius: 8px; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); font-family: inherit; font-size: 0.85rem; font-weight: 600;"></select>
+            </div>
           </div>
-          <div class="toggle-group">
+          <div class="toggle-group" style="align-self: flex-start;">
             <button class="toggle-btn active" id="btnThisYear">This Year</button>
             <button class="toggle-btn" id="btnLifetime">Lifetime</button>
           </div>

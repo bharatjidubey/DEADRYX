@@ -17,9 +17,88 @@ let currentFilteredData = [];
 let currentViewMode = "thisYear";
 
 const params = new URLSearchParams(window.location.search);
-const exerciseName = params.get("exercise") || "Exercise";
+let exerciseName = params.get("exercise") || "";
 
-exerciseTitle.textContent = `${exerciseName} Progress`;
+function getAllAvailableExercises() {
+  const raw = loadHistoricalLog();
+  const set = new Set();
+
+  // 1. Gather all exercises from history
+  Object.keys(raw).forEach(date => {
+    if (raw[date] && typeof raw[date] === "object") {
+      Object.keys(raw[date]).forEach(ex => {
+        if (ex && ex !== "Exercise") set.add(ex);
+      });
+    }
+  });
+
+  // 2. Add standard popular exercises
+  const DEFAULT_LIST = [
+    "Barbell Bench Press", "Incline Dumbbell Press", "Cable Crossover",
+    "Barbell Squat", "Leg Press", "Romanian Deadlift", "Bulgarian Split Squat",
+    "Deadlift", "Pull-up", "Lat Pulldown", "Barbell Row",
+    "Overhead Press", "Lateral Raise", "Barbell Curl", "Hammer Curl",
+    "Tricep Pushdown", "Skull Crushers", "Cable Crunch", "Plank"
+  ];
+  DEFAULT_LIST.forEach(ex => set.add(ex));
+
+  return Array.from(set).sort((a, b) => a.localeCompare(b));
+}
+
+function initExerciseSelect() {
+  const select = document.getElementById("exerciseSelect");
+  const exercises = getAllAvailableExercises();
+
+  // If exerciseName is not specified in URL, pick the most recent one with data or default
+  if (!exerciseName) {
+    const raw = loadHistoricalLog();
+    const dates = Object.keys(raw).sort().reverse();
+    let found = null;
+    for (const d of dates) {
+      const exs = Object.keys(raw[d] || {});
+      if (exs.length > 0) {
+        found = exs[0];
+        break;
+      }
+    }
+    exerciseName = found || "Barbell Bench Press";
+  }
+
+  if (exerciseTitle) {
+    exerciseTitle.textContent = `${exerciseName} Progress`;
+  }
+
+  if (select) {
+    select.innerHTML = "";
+    exercises.forEach(ex => {
+      const opt = document.createElement("option");
+      opt.value = ex;
+      opt.textContent = ex;
+      if (ex.toLowerCase() === exerciseName.toLowerCase()) {
+        opt.selected = true;
+        exerciseName = ex;
+      }
+      select.appendChild(opt);
+    });
+
+    select.addEventListener("change", (e) => {
+      switchExercise(e.target.value);
+    });
+  }
+}
+
+function switchExercise(newName) {
+  exerciseName = newName;
+  if (exerciseTitle) {
+    exerciseTitle.textContent = `${exerciseName} Progress`;
+  }
+  const newUrl = new URL(window.location);
+  newUrl.searchParams.set("exercise", exerciseName);
+  window.history.replaceState({}, "", newUrl);
+
+  historicalData = processHistoricalData();
+  renderChart(currentViewMode);
+}
 
 function loadHistoricalLog() {
   try {
@@ -342,6 +421,7 @@ function renderChart(viewMode = "thisYear") {
   });
 }
 
+initExerciseSelect();
 historicalData = processHistoricalData();
 renderChart("thisYear");
 
@@ -372,20 +452,7 @@ saveTargetBtn.addEventListener("click", () => {
   renderChart(currentViewMode);
 });
 
-// Mobile Sidebar Toggle
-const mobileMenuBtn = document.getElementById("mobileMenuBtn");
-const appSidebar = document.getElementById("appSidebar");
-const sidebarOverlay = document.getElementById("sidebarOverlay");
-
-if (mobileMenuBtn && appSidebar && sidebarOverlay) {
-  function toggleSidebar() {
-    appSidebar.classList.toggle("open");
-    sidebarOverlay.classList.toggle("active");
-  }
-
-  mobileMenuBtn.addEventListener("click", toggleSidebar);
-  sidebarOverlay.addEventListener("click", toggleSidebar);
-}
+// (Mobile Sidebar Drawer is now centrally handled in shared.js)
 
 // Calendar picker button
 const calendarBtn = document.getElementById("calendarPickerBtn");

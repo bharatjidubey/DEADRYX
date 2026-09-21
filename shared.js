@@ -51,9 +51,12 @@ const BACKUP_KEYS = [
   "deadryx-bmi-profile-v1",
   "deadryx-bmi-target-v1",
   "deadryx-exercise-order-v1",
+  "deadryx-media-sync-v1",
+  "deadryx-timer-prefs-v1",
   "deadryx-last-write-v1",
   THEME_KEY
 ];
+window.BACKUP_KEYS = BACKUP_KEYS;
 
 function updateLastWriteTime() {
   localStorage.setItem("deadryx-last-write-v1", new Date().toISOString());
@@ -233,5 +236,59 @@ document.addEventListener("DOMContentLoaded", () => {
       localStorage.setItem("deadryx_storage_consent", "true");
       consentBanner.classList.remove("show");
     });
+  }
+});
+
+// ================== CENTRALIZED MOBILE SIDEBAR DRAWER ==================
+document.addEventListener("DOMContentLoaded", () => {
+  const mobileMenuBtn = document.getElementById("mobileMenuBtn");
+  const appSidebar = document.getElementById("appSidebar");
+  const sidebarOverlay = document.getElementById("sidebarOverlay");
+
+  if (mobileMenuBtn && appSidebar) {
+    const toggle = (e) => {
+      e.stopPropagation();
+      appSidebar.classList.toggle("open");
+      if (sidebarOverlay) sidebarOverlay.classList.toggle("active");
+    };
+    mobileMenuBtn.addEventListener("click", toggle);
+    if (sidebarOverlay) {
+      sidebarOverlay.addEventListener("click", () => {
+        appSidebar.classList.remove("open");
+        sidebarOverlay.classList.remove("active");
+      });
+    }
+  }
+});
+
+// ================== GLOBAL ESCAPE KEY HANDLER ==================
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    // 1. Close open modals
+    document.querySelectorAll(".modal-overlay.active, .modal-overlay.show, .tools-modal.active").forEach(m => {
+      m.classList.remove("active", "show");
+    });
+    // 2. Close mobile sidebar drawer
+    const sb = document.getElementById("appSidebar");
+    const ov = document.getElementById("sidebarOverlay");
+    if (sb && sb.classList.contains("open")) {
+      sb.classList.remove("open");
+      if (ov) ov.classList.remove("active");
+    }
+    // 3. Close tools FAB menu
+    const fab = document.getElementById("toolsFAB");
+    if (fab && fab.classList.contains("open")) {
+      fab.classList.remove("open");
+    }
+    // 4. Close lightbox
+    const lb = document.getElementById("mediaLightbox");
+    if (lb && lb.classList.contains("active")) {
+      if (typeof closeLightbox === "function") {
+        closeLightbox();
+      } else {
+        lb.classList.remove("active");
+        document.body.style.overflow = "";
+      }
+    }
   }
 });

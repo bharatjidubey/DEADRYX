@@ -99,11 +99,15 @@
     <main class="main-content">
       <section class="panel day-panel">
         <div class="section-head">
-          <div>
+          <div style="flex: 1; min-width: 220px;">
             <p class="panel-kicker">Instructions</p>
             <h2 id="exerciseTitle">Exercise Notes</h2>
+            <div class="exercise-selector-bar" style="margin-top: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+              <label for="exerciseSelect" class="exercise-select-label" style="font-size: 0.82rem; font-weight: 600; color: var(--muted);">Switch Exercise:</label>
+              <select id="exerciseSelect" class="exercise-select-input" aria-label="Select exercise to view notes" style="flex: 1; max-width: 280px; padding: 0.4rem 0.75rem; border-radius: 8px; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); font-family: inherit; font-size: 0.85rem; font-weight: 600;"></select>
+            </div>
           </div>
-          <div class="header-actions" style="display: flex; align-items: center;">
+          <div class="header-actions" style="display: flex; align-items: center; align-self: flex-start;">
             <span id="saveIndicator" class="save-indicator">Saved</span>
           </div>
         </div>
@@ -144,16 +148,6 @@
   </div>
 
   <script src="notes.js"></script>
-  <script>
-    const mb = document.getElementById("mobileMenuBtn");
-    const sb = document.getElementById("appSidebar");
-    const ov = document.getElementById("sidebarOverlay");
-    if (mb && sb && ov) {
-      const t = () => { sb.classList.toggle("open"); ov.classList.toggle("active"); };
-      mb.addEventListener("click", t);
-      ov.addEventListener("click", t);
-    }
-  </script>
   <!-- Google Drive Sync Integration -->
   <script src="gdrive-sync.js"></script>
   <script async defer src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>

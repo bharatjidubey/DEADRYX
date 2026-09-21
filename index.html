@@ -220,6 +220,7 @@
             <button class="backup-btn" id="importBtn" style="flex: 1; justify-content: center;">⬆️ Import</button>
             <input type="file" id="importFile" accept="application/json" style="display: none;">
           </div>
+          <button class="backup-btn" id="csvExportBtn" onclick="if(typeof exportHistoryToCSV==='function')exportHistoryToCSV()" style="width: 100%; justify-content: center; margin-top: 0.5rem; background: rgba(52, 211, 153, 0.1); color: var(--accent2); border-color: var(--accent2);">📊 Export History to CSV</button>
         </div>
 
         <!-- Hidden inputs list for split structure compatibility -->
@@ -475,6 +476,7 @@
   </div>
 
   <script src="stats.js" defer></script>
+  <script src="tools.js" defer></script>
   <script src="script.js" defer></script>
   <script src="bmi.js" defer></script>
 

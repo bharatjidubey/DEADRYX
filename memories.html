@@ -143,16 +143,6 @@
   </div>
 
   <script src="memories.js"></script>
-  <script>
-    const mb = document.getElementById("mobileMenuBtn");
-    const sb = document.getElementById("appSidebar");
-    const ov = document.getElementById("sidebarOverlay");
-    if (mb && sb && ov) {
-      const t = () => { sb.classList.toggle("open"); ov.classList.toggle("active"); };
-      mb.addEventListener("click", t);
-      ov.addEventListener("click", t);
-    }
-  </script>
   <!-- Google Drive Sync Integration -->
   <script src="gdrive-sync.js"></script>
   <script async defer src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>

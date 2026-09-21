@@ -1,4 +1,4 @@
-const CACHE_NAME = 'deadryx-cache-v3';
+const CACHE_NAME = 'deadryx-cache-v5';
 
 // We cache core files to allow the app to work offline
 const ASSETS_TO_CACHE = [
@@ -12,6 +12,7 @@ const ASSETS_TO_CACHE = [
   './script.js',
   './shared.js',
   './stats.js',
+  './tools.js',
   './bmi.js',
   './notes.js',
   './analysis.js',
