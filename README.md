@@ -168,5 +168,5 @@ This project is licensed under the **MIT License** — see the [LICENSE](LICENSE
 
 Crafted with dedication by **Bharat Ji Dubey**:
 - **Email**: [bharatjid021@gmail.com](mailto:bharatjid021@gmail.com)
-- **Live App**: [deadryx.netlify.app](www.deadryx.me)
+- **Live App**: [deadryx.netlify.app](https://deadryx.netlify.app)
 - **Support**: [Buy Me a Coffee](https://buymeacoffee.com/bharatjidubey)
