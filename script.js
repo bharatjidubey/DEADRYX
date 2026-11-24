@@ -1,4 +1,4 @@
-﻿const DEFAULT_WORKOUT_PLAN = [
+const DEFAULT_WORKOUT_PLAN = [
   { day: "Monday", muscles: ["Chest", "Biceps"] },
   { day: "Tuesday", muscles: ["Shoulders", "Legs"] },
   { day: "Wednesday", muscles: ["Back", "Triceps"] },
@@ -1573,8 +1573,21 @@ function mergeAIWorkoutPlan(data) {
           planDay.muscles = Array.from(merged);
           result.splitUpdated++;
         }
+        delete dayMap[dayKey];
       }
     });
+
+    // Add any days from imported split not currently in workoutPlan (e.g. Saturday/Sunday)
+    for (const dKey in dayMap) {
+      const matchSplit = data.split.find(s => s && s.day && s.day.trim().toLowerCase() === dKey);
+      if (matchSplit) {
+        workoutPlan.push({
+          day: matchSplit.day.trim(),
+          muscles: Array.isArray(matchSplit.muscles) ? matchSplit.muscles.map(m => m.trim()) : []
+        });
+        result.splitUpdated++;
+      }
+    }
     persistWorkoutPlan();
   }
 
@@ -2068,20 +2081,16 @@ function resetAndApplyAIWorkoutPlan(data) {
 
   // 2. Set new split configuration
   if (Array.isArray(data.split) && data.split.length > 0) {
-    const dayMap = {};
-    data.split.forEach(s => {
-      if (s && s.day && Array.isArray(s.muscles)) {
-        dayMap[s.day.trim().toLowerCase()] = s.muscles.map(m => m.trim());
-      }
-    });
-
-    workoutPlan.forEach(planDay => {
-      const dayKey = planDay.day.trim().toLowerCase();
-      if (dayMap[dayKey]) {
-        planDay.muscles = [...dayMap[dayKey]];
-      }
-    });
+    workoutPlan = data.split.map(s => ({
+      day: s.day ? s.day.trim() : "Unknown",
+      muscles: Array.isArray(s.muscles) ? s.muscles.map(m => m.trim()) : []
+    }));
     persistWorkoutPlan();
+  }
+
+  // Ensure selectedDayIndex remains in bounds
+  if (typeof selectedDayIndex !== "undefined" && selectedDayIndex >= workoutPlan.length) {
+    selectedDayIndex = 0;
   }
 
   // 3. Set custom exercises
@@ -2148,7 +2157,11 @@ function resetAndApplyAIWorkoutPlan(data) {
   }
 
   // 5. Sync to Drive
-  triggerSync();
+  try {
+    triggerSync();
+  } catch (syncErr) {
+    console.warn("[Drive Sync] Non-blocking sync error on import:", syncErr);
+  }
 
   // 6. Refresh UI
   if (typeof renderCalendar === "function") renderCalendar();

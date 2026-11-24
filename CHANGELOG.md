@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.1.0] - 2026-11-24
+
+### Added
+- **60-Day Full Lifecycle Simulation Suite**: Interactive browser-based test suite in `tests/simulation-runner.html` and `tests/simulation-engine.js` with Instant Batch Mode (< 3s), Real-Time Mode (1 min = 1 day), Single-Day Drill, 15 Anti-Tamper attack vectors, 25 special milestone events, and ~2,000+ automated assertions covering all 35 features.
+- **New Visitor Welcome Onboarding Modal**: Automatic welcome modal for new unauthenticated visitors with custom sharp typography for "DEADRYX" (`Metal Mania`), feature overview cards (workouts, targets, analytics, memories, BMI, AI import), privacy guarantee, and state guard preventing display for signed-in users. Reopenable anytime from sidebar "Welcome Guide" button.
+- **In-Browser Automated Test Runner**: Automated unit and integration test harness in `tests/test-runner.html` with 25 test suites and 79 assertions covering math, anti-tamper state machine, AI plan import stress tests, routine scoping, cloud sync conflict engine, timer drift prevention, CSV formula injection defense, RIR translation matrix, target auto-unlock, exercise cascade rename, and cross-day exercise links.
+- **Cross-Day Same-Name Exercise Interconnection Engine**: Exercises sharing the exact same name across multiple split days (e.g., Lat Pulldown on Tuesday & Friday) now seamlessly link progressive overload benchmarks across sessions with full case-insensitivity and day-independent set scoping.
+- **Mobile Navigation Streamlining**: Shifted sidebar drawer toggle to top mobile avatar; removed 3-dot menu and top search button for a distraction-free 4-tab bottom navigation bar.
+- **QA & Testing Specification**: Comprehensive QA Test Plan v2.1.0 in `docs/TEST_PLAN.md` covering 9 manual test suites (53 test cases), automated suites matrix, and pre-deployment release checklist.
+- **AI Workout Plan Onboarding & Importer**: Modal with copyable/downloadable prompt compatible with ChatGPT, Claude, and Gemini to generate personalized JSON plans from workouts, timetables, or images.
+- **Dual Plan Application**: Option to choose between "Clean Slate" (wipe previous logs and start fresh) and "Merge / Overwrite" (update split and exercises while preserving logging history).
+- **Custom Exercise Synchronization in Notes & Analysis**: Custom and imported exercises are now automatically surfaced in exercise selector dropdowns across `analysis.html` and `notes.html`.
+
+### Fixed
+- **Custom Day Isolation & Default Bleed Fix**: Resolved issue where default built-in exercises with 3 fallback sets were appended to days that already had custom exercises configured. Days with day-specific custom routines now exclusively display their planned exercises.
+- **Set Type Cycling Alignment**: Corrected cycling sequence in test runner from `N` → `D` → `F` → `W` to match production `tools.js` sequence: `Normal (N)` → `Warmup (W)` → `Drop (D)` → `Failure (F)`.
+- **Cross-Day Custom Exercise Deletion**: Scoped custom exercise deletion to the active day, preventing accidental cross-day deletions.
+
+### Changed
+- Upgraded Service Worker cache to `deadryx-cache-v6`.
+
+---
+
 ## [2.0.0] - 2026-09-21
 
 ### Added
