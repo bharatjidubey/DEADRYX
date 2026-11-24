@@ -193,6 +193,7 @@ async function handleAuthClick() {
     if (disconnectBtn) disconnectBtn.style.display = "inline-flex";
 
     updateSyncStatus("Connected");
+    syncFileId = null; // Always force fresh search for logged-in user's file
     await fetchUserInfo();
     await fetchAndSyncFromDrive();
   };
@@ -489,22 +490,45 @@ function processDriveDataAndSaveLocal(driveData) {
   }
 }
 
+let findSyncFilePromise = null;
+
 async function findSyncFile() {
-  try {
-    const response = await gapi.client.drive.files.list({
-      q: `name='${SYNC_FILENAME}' and trashed=false`,
-      fields: 'files(id, name)',
-      spaces: 'appDataFolder'
-    });
-    const files = response.result.files;
-    if (files && files.length > 0) {
-      return files[0].id;
+  if (findSyncFilePromise) return findSyncFilePromise;
+
+  findSyncFilePromise = (async () => {
+    try {
+      const response = await gapi.client.drive.files.list({
+        q: `name='${SYNC_FILENAME}' and trashed=false`,
+        fields: 'files(id, name, modifiedTime, createdTime)',
+        orderBy: 'modifiedTime desc',
+        spaces: 'appDataFolder'
+      });
+      const files = response.result.files;
+      if (files && files.length > 0) {
+        const primaryFile = files[0];
+        // Clean up any extraneous duplicate files in appDataFolder (e.g. from parallel creation race conditions)
+        if (files.length > 1) {
+          console.warn(`[Drive Sync] Found ${files.length} sync files in appDataFolder. Using newest (${primaryFile.id}) and cleaning duplicates.`);
+          for (let i = 1; i < files.length; i++) {
+            try {
+              gapi.client.drive.files.delete({ fileId: files[i].id }).catch(() => {});
+            } catch (cleanupErr) {
+              // Ignore cleanup error
+            }
+          }
+        }
+        return primaryFile.id;
+      }
+      return null;
+    } catch (err) {
+      console.error("[Drive Sync] Error finding sync file in appDataFolder:", err);
+      return null;
+    } finally {
+      findSyncFilePromise = null;
     }
-    return null;
-  } catch (err) {
-    console.error("Error finding sync file", err);
-    return null;
-  }
+  })();
+
+  return findSyncFilePromise;
 }
 
 // ================== MEMORIES MEDIA SYNC ==================
@@ -776,7 +800,12 @@ async function uploadToDriveInternal() {
     const metadata = {
       name: SYNC_FILENAME,
       parents: ['appDataFolder'],
-      mimeType: 'application/json'
+      mimeType: 'application/json',
+      description: 'DEADRYX Encrypted Workout & Split Cloud Sync Data',
+      appProperties: {
+        app: 'DEADRYX',
+        schemaVersion: '2'
+      }
     };
 
     let url = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
@@ -804,6 +833,9 @@ async function uploadToDriveInternal() {
     if (res.ok) {
       const data = await res.json();
       syncFileId = data.id;
+    } else if (res.status === 404) {
+      // Remote file was deleted or unmapped, reset ID so subsequent sync re-creates
+      syncFileId = null;
     }
   } catch (err) {
     console.error("uploadToDriveInternal error:", err);
@@ -834,7 +866,12 @@ async function performUploadToDrive() {
     const metadata = {
       name: SYNC_FILENAME,
       parents: ['appDataFolder'],
-      mimeType: 'application/json'
+      mimeType: 'application/json',
+      description: 'DEADRYX Encrypted Workout & Split Cloud Sync Data',
+      appProperties: {
+        app: 'DEADRYX',
+        schemaVersion: '2'
+      }
     };
 
     let url = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
@@ -867,6 +904,9 @@ async function performUploadToDrive() {
       // Also upload any un-synced memories
       await uploadMemoriesToDrive();
     } else {
+      if (res.status === 404) {
+        syncFileId = null;
+      }
       updateSyncStatus("Upload Error");
     }
   } catch (err) {

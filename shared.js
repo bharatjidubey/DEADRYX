@@ -113,6 +113,40 @@ function importAllData(file) {
             imported++;
           }
         });
+
+        // Also normalize AI plan schema keys if present and not yet imported
+        if (data.split && data["deadryx-split-config-v1"] === undefined) {
+          localStorage.setItem("deadryx-split-config-v1", typeof data.split === "string" ? data.split : JSON.stringify(data.split));
+          imported++;
+        }
+        if (data.customExercises && data["deadryx-custom-exercises-v1"] === undefined) {
+          localStorage.setItem("deadryx-custom-exercises-v1", typeof data.customExercises === "string" ? data.customExercises : JSON.stringify(data.customExercises));
+          imported++;
+        }
+        if (data.workoutHistory && data["deadryx-workout-history-v1"] === undefined) {
+          localStorage.setItem("deadryx-workout-history-v1", typeof data.workoutHistory === "string" ? data.workoutHistory : JSON.stringify(data.workoutHistory));
+          imported++;
+        }
+        if (data.historicalLog && data["deadryx-historical-log-v1"] === undefined) {
+          localStorage.setItem("deadryx-historical-log-v1", typeof data.historicalLog === "string" ? data.historicalLog : JSON.stringify(data.historicalLog));
+          imported++;
+        }
+        if (data.attendance && data["deadryx-attendance-v1"] === undefined) {
+          localStorage.setItem("deadryx-attendance-v1", typeof data.attendance === "string" ? data.attendance : JSON.stringify(data.attendance));
+          imported++;
+        }
+        if (data.prRecords && data["deadryx-pr-records-v1"] === undefined) {
+          localStorage.setItem("deadryx-pr-records-v1", typeof data.prRecords === "string" ? data.prRecords : JSON.stringify(data.prRecords));
+          imported++;
+        }
+        if (data.targets && data["deadryx-targets-v1"] === undefined) {
+          localStorage.setItem("deadryx-targets-v1", typeof data.targets === "string" ? data.targets : JSON.stringify(data.targets));
+          imported++;
+        }
+        if (data.notes && data["deadryx-notes-v1"] === undefined) {
+          localStorage.setItem("deadryx-notes-v1", typeof data.notes === "string" ? data.notes : JSON.stringify(data.notes));
+          imported++;
+        }
         resolve(imported);
       } catch (err) {
         reject(err);
@@ -138,21 +172,24 @@ function savePRRecords(data) {
 
 function detectAndRecordPR(exerciseName, weight, reps) {
   const w = parseFloat(weight);
-  const r = parseInt(reps);
+  const r = parseInt(reps, 10);
   if (!w || w <= 0 || !r || r <= 0) return null;
 
   const records = loadPRRecords();
-  const existing = records[exerciseName] || { weight: 0, reps: 0, date: null };
+  const cleanKey = (exerciseName || "").trim().toLowerCase();
+  const existing = records[cleanKey] || records[exerciseName] || { weight: 0, reps: 0, date: null };
 
-  let isWeightPR = w > existing.weight;
-  let isRepsPR = w === existing.weight && r > existing.reps;
+  const isWeightPR = w > existing.weight;
+  const isRepsPR = w === existing.weight && r > existing.reps;
 
   if (isWeightPR || isRepsPR) {
-    records[exerciseName] = {
+    const updated = {
       weight: Math.max(w, existing.weight),
       reps: isWeightPR ? r : Math.max(r, existing.reps),
       date: new Date().toISOString().split("T")[0]
     };
+    records[cleanKey] = updated;
+    records[exerciseName] = updated;
     savePRRecords(records);
     return {
       isPR: true,
@@ -198,60 +235,66 @@ function celebratePR(prData) {
   }, 5000);
 }
 
-// ================== THEME TOGGLE BUTTON WIRING ==================
+// ================== SERVICE WORKER REGISTRATION ==================
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  });
+}
+
+// ================== CENTRALIZED DOM INITIALIZATION ==================
 document.addEventListener("DOMContentLoaded", () => {
+  // 1. Theme toggle buttons
   document.querySelectorAll(".theme-toggle-btn").forEach(btn => {
     btn.addEventListener("click", toggleTheme);
   });
   applyTheme(loadTheme());
-});
 
-// ================== SERVICE WORKER REGISTRATION ==================
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js')
-      .then(registration => {
-        console.log('ServiceWorker registration successful with scope: ', registration.scope);
-      })
-      .catch(err => {
-        console.log('ServiceWorker registration failed: ', err);
-      });
-  });
-}
-
-// ================== STORAGE CONSENT WIRING ==================
-document.addEventListener("DOMContentLoaded", () => {
+  // 2. Storage consent banner
   const consentBanner = document.getElementById("storageConsentBanner");
   const acceptBtn = document.getElementById("acceptStorageBtn");
-
   if (consentBanner && acceptBtn) {
     if (!localStorage.getItem("deadryx_storage_consent")) {
-      // Small delay for smooth entry
-      setTimeout(() => {
-        consentBanner.classList.add("show");
-      }, 500);
+      setTimeout(() => consentBanner.classList.add("show"), 500);
     }
-
     acceptBtn.addEventListener("click", () => {
       localStorage.setItem("deadryx_storage_consent", "true");
       consentBanner.classList.remove("show");
     });
   }
-});
 
-// ================== CENTRALIZED MOBILE SIDEBAR DRAWER ==================
-document.addEventListener("DOMContentLoaded", () => {
+  // 3. Centralized mobile sidebar drawer & avatar navigation
   const mobileMenuBtn = document.getElementById("mobileMenuBtn");
+  const mobileAvatars = document.querySelectorAll(".mobile-avatar, #mobileAvatarBtn");
   const appSidebar = document.getElementById("appSidebar");
   const sidebarOverlay = document.getElementById("sidebarOverlay");
 
-  if (mobileMenuBtn && appSidebar) {
+  if (appSidebar) {
     const toggle = (e) => {
       e.stopPropagation();
       appSidebar.classList.toggle("open");
       if (sidebarOverlay) sidebarOverlay.classList.toggle("active");
     };
-    mobileMenuBtn.addEventListener("click", toggle);
+
+    mobileAvatars.forEach(av => {
+      av.addEventListener("click", toggle);
+      av.style.cursor = "pointer";
+      av.setAttribute("role", "button");
+      av.setAttribute("tabindex", "0");
+      av.setAttribute("aria-label", "Open navigation menu and profile");
+      av.setAttribute("title", "Open Menu & Profile");
+      av.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          toggle(e);
+        }
+      });
+    });
+
+    if (mobileMenuBtn) {
+      mobileMenuBtn.addEventListener("click", toggle);
+    }
+
     if (sidebarOverlay) {
       sidebarOverlay.addEventListener("click", () => {
         appSidebar.classList.remove("open");
@@ -264,9 +307,9 @@ document.addEventListener("DOMContentLoaded", () => {
 // ================== GLOBAL ESCAPE KEY HANDLER ==================
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
-    // 1. Close open modals
-    document.querySelectorAll(".modal-overlay.active, .modal-overlay.show, .tools-modal.active").forEach(m => {
-      m.classList.remove("active", "show");
+    // 1. Close open modals & dropdowns
+    document.querySelectorAll(".modal-overlay.active, .modal-overlay.show, .tools-modal.active, .exercise-dropdown-menu.open").forEach(m => {
+      m.classList.remove("active", "show", "open");
     });
     // 2. Close mobile sidebar drawer
     const sb = document.getElementById("appSidebar");

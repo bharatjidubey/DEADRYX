@@ -1,4 +1,4 @@
-const DEFAULT_WORKOUT_PLAN = [
+﻿const DEFAULT_WORKOUT_PLAN = [
   { day: "Monday", muscles: ["Chest", "Biceps"] },
   { day: "Tuesday", muscles: ["Shoulders", "Legs"] },
   { day: "Wednesday", muscles: ["Back", "Triceps"] },
@@ -141,21 +141,34 @@ function getCurrentDayIndex() {
 
 function getExercisesForDay(dayConfig) {
   const lowerHidden = hiddenExercises.map(x => x.toLowerCase());
-  let filteredSource = exerciseSource.filter((exercise) => dayConfig.muscles.includes(exercise.muscle) && !lowerHidden.includes(exercise.name.toLowerCase()));
+  const targetDayLower = dayConfig.day ? dayConfig.day.toLowerCase() : "";
 
-  let filteredCustom = customExercises.filter(exercise => {
+  // 1. Day-specific custom exercises configured for this specific day
+  const dayCustoms = customExercises.filter(exercise => {
     if (lowerHidden.includes(exercise.name.toLowerCase())) return false;
-    if (exercise.specificDay) {
-      return exercise.specificDay === dayConfig.day;
-    }
-    return dayConfig.muscles.includes(exercise.muscle);
+    return exercise.specificDay && exercise.specificDay.toLowerCase() === targetDayLower;
   });
 
-  // Deduplicate by name, preferring custom exercises which may override sets or specification
+  // 2. Default catalog exercises: only used as a fallback if this day has NO day-specific custom exercises
+  let filteredSource = [];
+  if (dayCustoms.length === 0) {
+    filteredSource = exerciseSource.filter((exercise) =>
+      dayConfig.muscles.includes(exercise.muscle) && !lowerHidden.includes(exercise.name.toLowerCase())
+    );
+  }
+
+  // 3. General custom exercises (not pinned to a specific day) matching day's muscles
+  const generalCustoms = customExercises.filter(exercise => {
+    if (lowerHidden.includes(exercise.name.toLowerCase())) return false;
+    return !exercise.specificDay && dayConfig.muscles.includes(exercise.muscle);
+  });
+
+  // Deduplicate by name: default source -> general customs -> day-specific customs (highest precedence)
   const uniqueMap = new Map();
   filteredSource.forEach(ex => uniqueMap.set(ex.name.toLowerCase(), ex));
-  filteredCustom.forEach(ex => uniqueMap.set(ex.name.toLowerCase(), ex));
-  
+  generalCustoms.forEach(ex => uniqueMap.set(ex.name.toLowerCase(), ex));
+  dayCustoms.forEach(ex => uniqueMap.set(ex.name.toLowerCase(), ex));
+
   let filtered = Array.from(uniqueMap.values());
 
   const dayOrder = exerciseOrder[dayConfig.day];
@@ -232,17 +245,35 @@ function renderCalendar() {
 
 /**
  * Look up the most recent recorded lift for a specific exercise & set prior to a given date.
+ * Matches exercises strictly by name (case-insensitive & trimmed) across ANY day of the week,
+ * so exercises appearing on multiple days (e.g. Lat Pulldown on Tuesday & Friday) seamlessly interconnect.
  */
 function getMostRecentPreviousLift(exerciseName, setNumber, beforeDateStr) {
-  if (!historicalLog) return null;
+  if (!historicalLog || !exerciseName) return null;
+  const cleanTarget = exerciseName.trim().toLowerCase();
+
   const validDates = Object.keys(historicalLog)
-    .filter(d => d < beforeDateStr && historicalLog[d] && historicalLog[d][exerciseName] && historicalLog[d][exerciseName][setNumber])
+    .filter(d => {
+      if (beforeDateStr && d >= beforeDateStr) return false;
+      const dayLog = historicalLog[d];
+      if (!dayLog) return false;
+      let matchingKey = dayLog[exerciseName] ? exerciseName : null;
+      if (!matchingKey) {
+        matchingKey = Object.keys(dayLog).find(k => k.trim().toLowerCase() === cleanTarget);
+      }
+      return matchingKey && dayLog[matchingKey] && dayLog[matchingKey][setNumber];
+    })
     .sort()
     .reverse();
 
   if (validDates.length > 0) {
     const lastDate = validDates[0];
-    const entry = historicalLog[lastDate][exerciseName][setNumber];
+    const dayLog = historicalLog[lastDate];
+    let matchingKey = dayLog[exerciseName] ? exerciseName : null;
+    if (!matchingKey) {
+      matchingKey = Object.keys(dayLog).find(k => k.trim().toLowerCase() === cleanTarget);
+    }
+    const entry = matchingKey ? dayLog[matchingKey][setNumber] : null;
     if (entry && (entry.weight !== "0" || entry.reps !== "0")) {
       const parts = lastDate.split("-");
       const dObj = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
@@ -286,6 +317,8 @@ function renderWorkoutDay() {
   const isTodaySelected = (dayConfig.day === todayDayName);
   const TEN_MINUTES_MS = 10 * 60 * 1000;
 
+  const cardFragment = document.createDocumentFragment();
+
   dayExercises.forEach((exercise) => {
     const card = document.createElement("article");
     card.className = "exercise-card";
@@ -304,7 +337,9 @@ function renderWorkoutDay() {
       let previousText = "No previous data";
 
       // 1. Determine Previous Data by querying historicalLog for most recent past lift
-      const prevLift = getMostRecentPreviousLift(exercise.name, setNumber, todayStr);
+      // If today is active, query strictly before today; if inspecting another day, show most recent lift up to today
+      const cutoffDate = isTodaySelected ? todayStr : null;
+      const prevLift = getMostRecentPreviousLift(exercise.name, setNumber, cutoffDate);
       if (prevLift) {
         previousText = `${prevLift.weight} kg × ${prevLift.reps} reps (${prevLift.dateLabel})`;
       }
@@ -341,10 +376,11 @@ function renderWorkoutDay() {
       const currentTag = logData?.tag || 'N';
       const tagInfo = (typeof getSetTypeByKey === 'function') ? getSetTypeByKey(currentTag) : { key: 'N', label: 'Set' };
 
-      // RPE value
+      // RPE value with accessible aria-label (WCAG compliance)
       const currentRPE = logData?.rpe || '';
+      const rpeAriaLabel = `RPE for ${exercise.name} set ${setNumber}`;
       const rpeSelectHTML = (typeof getRPESelectHTML === 'function')
-        ? getRPESelectHTML(currentRPE, `data-day="${dayConfig.day}" data-exercise="${exercise.name}" data-set="${setNumber}" ${setDisabled ? 'disabled' : ''}`)
+        ? getRPESelectHTML(currentRPE, `data-day="${dayConfig.day}" data-exercise="${exercise.name}" data-set="${setNumber}" ${setDisabled ? 'disabled' : ''}`, rpeAriaLabel)
         : '';
 
       // Live e1RM preview
@@ -355,7 +391,7 @@ function renderWorkoutDay() {
 
       return `
         <div class="set-row" data-set-type="${currentTag}">
-          <div class="set-badge" data-type="${currentTag}" data-day="${dayConfig.day}" data-exercise="${exercise.name}" data-set="${setNumber}" title="Click to change set type: Warmup / Normal / Drop / Failure">${tagInfo.label} ${setNumber}</div>
+          <div class="set-badge" data-type="${currentTag}" data-day="${dayConfig.day}" data-exercise="${exercise.name}" data-set="${setNumber}" title="Click to change set type: Warmup / Normal / Drop / Failure">${tagInfo.label}&nbsp;${setNumber}</div>
           <div class="previous-display" title="Previous recorded lift">${previousText}</div>
           <div style="display:flex; align-items:center; gap:0.25rem;">
             <input
@@ -411,11 +447,22 @@ function renderWorkoutDay() {
           <h3 class="exercise-title">${exercise.name}</h3>
           ${exerciseStatusPillHtml}
         </div>
-        <div>
+        <div class="exercise-header-actions">
           <span class="exercise-tag">${exercise.muscle}</span>
-          <button class="analysis-btn" onclick="window.location.href='analysis.html?exercise=${encodeURIComponent(exercise.name)}'">Analysis</button>
-          <button class="notes-btn" onclick="window.location.href='notes.html?exercise=${encodeURIComponent(exercise.name)}'">Notes</button>
-          <button class="delete-icon-btn" data-ex-name="${exercise.name}">🗑️</button>
+          <div class="exercise-menu-container">
+            <button type="button" class="exercise-menu-trigger" aria-label="Exercise options for ${exercise.name}" title="More options">···</button>
+            <div class="exercise-dropdown-menu">
+              <button type="button" class="dropdown-menu-item" onclick="window.location.href='analysis.html?exercise=${encodeURIComponent(exercise.name)}'">
+                <span class="menu-item-icon">📊</span>
+                <span>Analysis</span>
+              </button>
+              <button type="button" class="dropdown-menu-item" onclick="window.location.href='notes.html?exercise=${encodeURIComponent(exercise.name)}'">
+                <span class="menu-item-icon">📝</span>
+                <span>Notes</span>
+              </button>
+            </div>
+          </div>
+          <button class="delete-icon-btn" data-ex-name="${exercise.name}" title="Delete exercise">🗑️</button>
         </div>
       </div>
       <div class="sets-table">
@@ -433,8 +480,10 @@ function renderWorkoutDay() {
       </div>
     `;
 
-    exerciseList.appendChild(card);
+    cardFragment.appendChild(card);
   });
+
+  exerciseList.appendChild(cardFragment);
 
   // Ensure delegated events are wired up once on exerciseList
   initExerciseListDelegation();
@@ -457,7 +506,7 @@ function initExerciseListDelegation() {
       const newType = (typeof cycleSetType === "function") ? cycleSetType(currentType) : "N";
       const newInfo = (typeof getSetTypeByKey === "function") ? getSetTypeByKey(newType) : { label: "Set" };
       badge.setAttribute("data-type", newType);
-      badge.textContent = newInfo.label + " " + (badge.dataset.set || "");
+      badge.textContent = newInfo.label + "\u00A0" + (badge.dataset.set || "");
       const row = badge.closest(".set-row");
       if (row) row.setAttribute("data-set-type", newType);
       return;
@@ -472,6 +521,30 @@ function initExerciseListDelegation() {
         PlateCalculator.openModal(weight || "");
       }
       return;
+    }
+
+    // 3. Exercise card overflow menu toggle (Consolidated actions)
+    const menuTrigger = e.target.closest(".exercise-menu-trigger");
+    if (menuTrigger && exerciseList.contains(menuTrigger)) {
+      e.stopPropagation();
+      const container = menuTrigger.closest(".exercise-menu-container");
+      const dropdown = container?.querySelector(".exercise-dropdown-menu");
+      const wasOpen = dropdown?.classList.contains("open");
+
+      // Close all other open dropdowns
+      document.querySelectorAll(".exercise-dropdown-menu.open").forEach(m => m.classList.remove("open"));
+
+      if (!wasOpen && dropdown) {
+        dropdown.classList.add("open");
+      }
+      return;
+    }
+  });
+
+  // Global listener to close exercise overflow menus when clicking outside
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".exercise-menu-container")) {
+      document.querySelectorAll(".exercise-dropdown-menu.open").forEach(m => m.classList.remove("open"));
     }
   });
 
@@ -544,10 +617,11 @@ function saveWorkout() {
     }
 
     let currentLog = workoutHistory[dayConfig.day][exerciseName][setNumber];
-    let prevW = currentLog?.prevWeight || currentLog?.weight || null;
-    let prevR = currentLog?.prevReps || currentLog?.reps || null;
+    const prevLift = getMostRecentPreviousLift(exerciseName, setNumber, todayStr);
+    let prevW = prevLift ? prevLift.weight : (currentLog?.prevWeight || currentLog?.weight || null);
+    let prevR = prevLift ? prevLift.reps : (currentLog?.prevReps || currentLog?.reps || null);
 
-    if (currentLog && currentLog.dateStamp && currentLog.dateStamp !== todayStr) {
+    if (!prevLift && currentLog && currentLog.dateStamp && currentLog.dateStamp !== todayStr) {
       prevW = currentLog.weight;
       prevR = currentLog.reps;
     }
@@ -967,11 +1041,20 @@ if (openAddExerciseBtn && addExerciseModal) {
       if (!finalNamesLower.includes(initEx.name.toLowerCase())) {
         const isDefault = exerciseSource.some(dEx => dEx.name.toLowerCase() === initEx.name.toLowerCase());
         if (isDefault) {
+          // Default exercises hide globally (same muscle group on all days)
           if (!hiddenExercises.includes(initEx.name)) {
             hiddenExercises.push(initEx.name);
           }
         } else {
-          customExercises = customExercises.filter(cEx => cEx.name.toLowerCase() !== initEx.name.toLowerCase());
+          // Custom exercises: only remove the entry that belongs to THIS day.
+          // An entry belongs to this day if it has specificDay === targetDay,
+          // OR if it has no specificDay (muscle-matched legacy entry).
+          // Never delete a custom entry that belongs to a different specific day.
+          customExercises = customExercises.filter(cEx => {
+            if (cEx.name.toLowerCase() !== initEx.name.toLowerCase()) return true; // keep — different exercise
+            if (cEx.specificDay && cEx.specificDay !== targetDay) return true;      // keep — belongs to another day
+            return false;                                                            // remove — belongs to this day
+          });
         }
       }
     });
@@ -986,8 +1069,6 @@ if (openAddExerciseBtn && addExerciseModal) {
 
       if (A && A.toLowerCase() !== B.toLowerCase()) {
         // Exercise was RENAMED!
-        console.log(`Renaming exercise from '${A}' to '${B}'...`);
-
         // A. Custom Exercises list
         const isDefault = exerciseSource.some(dEx => dEx.name.toLowerCase() === A.toLowerCase());
         if (isDefault) {
@@ -1003,11 +1084,15 @@ if (openAddExerciseBtn && addExerciseModal) {
             sets: ex.sets
           });
         } else {
-          // Update custom exercise name and sets
-          const idx = customExercises.findIndex(cEx => cEx.name.toLowerCase() === A.toLowerCase());
+          // Update custom exercise name and sets for this specific day
+          const idx = customExercises.findIndex(cEx => 
+            cEx.name.toLowerCase() === A.toLowerCase() &&
+            (!cEx.specificDay || cEx.specificDay.toLowerCase() === targetDay.toLowerCase())
+          );
           if (idx !== -1) {
             customExercises[idx].name = B;
             customExercises[idx].sets = ex.sets;
+            // specificDay is intentionally NOT changed — the exercise stays on its original day
           }
         }
 
@@ -1088,21 +1173,21 @@ if (openAddExerciseBtn && addExerciseModal) {
             sets: ex.sets
           });
         } else {
-          // Check sets updates for existing
-          const cIdx = customExercises.findIndex(cEx => cEx.name.toLowerCase() === B.toLowerCase());
+          // Check sets updates for existing entry on THIS specific day
+          const cIdx = customExercises.findIndex(cEx => 
+            cEx.name.toLowerCase() === B.toLowerCase() &&
+            (!cEx.specificDay || cEx.specificDay.toLowerCase() === targetDay.toLowerCase())
+          );
           if (cIdx !== -1) {
             customExercises[cIdx].sets = ex.sets;
           } else {
-            const isDefault = exerciseSource.some(dEx => dEx.name.toLowerCase() === B.toLowerCase());
-            if (isDefault) {
-              // Override default sets by saving as custom
-              customExercises.push({
-                name: B,
-                muscle: ex.muscle,
-                specificDay: targetDay,
-                sets: ex.sets
-              });
-            }
+            // New day-specific custom exercise entry for this day (allows same exercise on multiple days)
+            customExercises.push({
+              name: B,
+              muscle: ex.muscle,
+              specificDay: targetDay,
+              sets: ex.sets
+            });
           }
         }
       }
@@ -1206,18 +1291,16 @@ renderAttendance();
 function renderAttendance() {
   if (!attendanceMonths || !attendanceGrid) return;
 
-  attendanceMonths.innerHTML = "";
-  attendanceGrid.innerHTML = "";
-
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  months.forEach((m) => {
-    attendanceMonths.innerHTML += `<span>${m}</span>`;
-  });
+  attendanceMonths.innerHTML = months.map(m => `<span>${m}</span>`).join("");
+  attendanceGrid.innerHTML = "";
 
   const year = new Date().getFullYear();
   const startDate = new Date(year, 0, 1); // Jan 1
   const endDate = new Date(year, 11, 31); // Dec 31
   const totalDays = Math.floor((endDate - startDate) / (24 * 60 * 60 * 1000)) + 1;
+
+  const gridFragment = document.createDocumentFragment();
 
   // Add empty cells to align Jan 1 to the correct day-of-week row
   const startDayOfWeek = startDate.getDay(); // 0=Sun, 1=Mon, ...
@@ -1225,7 +1308,7 @@ function renderAttendance() {
     const empty = document.createElement("div");
     empty.className = "attendance-cell";
     empty.style.visibility = "hidden";
-    attendanceGrid.appendChild(empty);
+    gridFragment.appendChild(empty);
   }
 
   for (let i = 0; i < totalDays; i++) {
@@ -1247,8 +1330,10 @@ function renderAttendance() {
     const formattedDate = locDate.toLocaleDateString("en-US", { month: "short", day: "2-digit" }).replace(" ", " - ");
     cell.dataset.date = formattedDate;
     cell.dataset.activity = activity;
-    attendanceGrid.appendChild(cell);
+    gridFragment.appendChild(cell);
   }
+
+  attendanceGrid.appendChild(gridFragment);
 
   requestAnimationFrame(() => {
     const wrapper = document.getElementById("attendanceScrollWrapper");
@@ -1324,19 +1409,22 @@ if (toggleDeleteModeBtn) {
 
     if (isDeleteMode) {
       exerciseList.classList.add("delete-mode-active");
+      toggleDeleteModeBtn.classList.add("active");
       toggleDeleteModeBtn.style.background = "var(--red)";
       toggleDeleteModeBtn.style.color = "#fff";
 
       deleteModeTimeout = setTimeout(() => {
         isDeleteMode = false;
         exerciseList.classList.remove("delete-mode-active");
-        toggleDeleteModeBtn.style.background = "transparent";
-        toggleDeleteModeBtn.style.color = "var(--red)";
+        toggleDeleteModeBtn.classList.remove("active");
+        toggleDeleteModeBtn.style.background = "";
+        toggleDeleteModeBtn.style.color = "";
       }, 30000);
     } else {
       exerciseList.classList.remove("delete-mode-active");
-      toggleDeleteModeBtn.style.background = "transparent";
-      toggleDeleteModeBtn.style.color = "var(--red)";
+      toggleDeleteModeBtn.classList.remove("active");
+      toggleDeleteModeBtn.style.background = "";
+      toggleDeleteModeBtn.style.color = "";
     }
   });
 
@@ -1346,11 +1434,18 @@ if (toggleDeleteModeBtn) {
 
     const exName = btn.dataset.exName;
     if (confirm(`Are you sure you want to delete '${exName}' from your workout plan?`)) {
-      const customIndex = customExercises.findIndex(ex => ex.name === exName);
+      const currentDay = workoutPlan[selectedDayIndex].day;
+      // Find the custom entry that specifically belongs to the currently viewed day.
+      // An entry "belongs" here if its specificDay matches, or if it has no specificDay.
+      const customIndex = customExercises.findIndex(ex =>
+        ex.name === exName &&
+        (!ex.specificDay || ex.specificDay === currentDay)
+      );
       if (customIndex !== -1) {
         customExercises.splice(customIndex, 1);
         persistCustomExercises();
       } else {
+        // It's a default (exerciseSource) exercise — hide it globally
         if (!hiddenExercises.includes(exName)) {
           hiddenExercises.push(exName);
           persistHiddenExercises();
@@ -1381,23 +1476,740 @@ if (exportBtn) {
   });
 }
 
+// Helper to process backup file from input change or drag-and-drop
+async function processBackupFile(file) {
+  if (!file) return;
+  if (!confirm("Importing will overwrite your current data with this backup. Continue?")) {
+    if (importFile) importFile.value = "";
+    return;
+  }
+  try {
+    const count = await importAllData(file);
+    alert(`Successfully restored ${count} data entries. Reloading...`);
+    location.reload();
+  } catch (err) {
+    alert("Import failed: " + err.message);
+  }
+  if (importFile) importFile.value = "";
+}
+
 if (importBtn && importFile) {
   importBtn.addEventListener("click", () => importFile.click());
-  importFile.addEventListener("change", async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    if (!confirm("Importing will overwrite your current data. Continue?")) {
-      importFile.value = "";
-      return;
+  importFile.addEventListener("change", (e) => {
+    if (e.target.files && e.target.files[0]) {
+      processBackupFile(e.target.files[0]);
     }
+  });
+
+  // Enable drag-and-drop directly onto Import button and backup area
+  const backupZone = importBtn.closest(".backup-actions") || importBtn;
+  [importBtn, backupZone].forEach(elem => {
+    if (!elem) return;
+    elem.addEventListener("dragenter", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+      elem.classList.add("dragover");
+    });
+
+    elem.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+      elem.classList.add("dragover");
+    });
+
+    elem.addEventListener("dragleave", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.relatedTarget && elem.contains(e.relatedTarget)) return;
+      elem.classList.remove("dragover");
+    });
+
+    elem.addEventListener("drop", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      elem.classList.remove("dragover");
+      const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (file) {
+        processBackupFile(file);
+      }
+    });
+  });
+}
+
+// ============ AI WORKOUT PLAN MERGE IMPORT ============
+const importAIPlanBtn = document.getElementById("importAIPlanBtn");
+const importAIPlanFile = document.getElementById("importAIPlanFile");
+
+function mergeAIWorkoutPlan(data) {
+  if (!data || typeof data !== "object") {
+    throw new Error("Invalid file format. Expected a JSON object.");
+  }
+
+  const result = { splitUpdated: 0, exercisesAdded: 0, bmiUpdated: false };
+
+  // 1. Merge Split Configuration (if provided)
+  if (Array.isArray(data.split) && data.split.length > 0) {
+    const dayMap = {};
+    data.split.forEach(s => {
+      if (s && s.day && Array.isArray(s.muscles)) {
+        dayMap[s.day.trim().toLowerCase()] = s.muscles.map(m => m.trim());
+      }
+    });
+
+    workoutPlan.forEach(planDay => {
+      const dayKey = planDay.day.trim().toLowerCase();
+      if (dayMap[dayKey]) {
+        const newMuscles = dayMap[dayKey];
+        if (planDay.muscles.length === 1 && planDay.muscles[0] === "Rest") {
+          planDay.muscles = [...newMuscles];
+          result.splitUpdated++;
+        } else {
+          const merged = new Set([...planDay.muscles, ...newMuscles]);
+          if (merged.size > 1 && merged.has("Rest")) {
+            merged.delete("Rest");
+          }
+          planDay.muscles = Array.from(merged);
+          result.splitUpdated++;
+        }
+      }
+    });
+    persistWorkoutPlan();
+  }
+
+  // 2. Merge Custom Exercises (additive merge, scoped per day)
+  if (Array.isArray(data.customExercises) && data.customExercises.length > 0) {
+    // Unhide exercises if they were previously hidden
+    const toUnhideLower = data.customExercises.map(e => e.name ? e.name.toLowerCase().trim() : "");
+    hiddenExercises = hiddenExercises.filter(h => !toUnhideLower.includes(h.toLowerCase()));
+    persistHiddenExercises();
+
+    data.customExercises.forEach(ex => {
+      if (!ex.name) return;
+      const cleanName = ex.name.trim();
+      const cleanMuscle = ex.muscle ? ex.muscle.trim() : "Other";
+      const sets = parseInt(ex.sets, 10) || 3;
+      const specificDay = ex.specificDay ? ex.specificDay.trim() : null;
+
+      // Match by name AND specificDay so same exercise on another day is preserved
+      const existingIdx = customExercises.findIndex(c =>
+        c.name.toLowerCase() === cleanName.toLowerCase() &&
+        (c.specificDay === specificDay || (!c.specificDay && !specificDay))
+      );
+
+      if (existingIdx !== -1) {
+        customExercises[existingIdx].sets = sets;
+        if (cleanMuscle && cleanMuscle !== "Other") {
+          customExercises[existingIdx].muscle = cleanMuscle;
+        }
+      } else {
+        customExercises.push({
+          name: cleanName,
+          muscle: cleanMuscle,
+          specificDay: specificDay,
+          sets: sets
+        });
+        result.exercisesAdded++;
+
+        // Add to exerciseOrder for that day if present
+        if (specificDay && exerciseOrder[specificDay]) {
+          const lowerName = cleanName.toLowerCase();
+          if (!exerciseOrder[specificDay].includes(lowerName)) {
+            exerciseOrder[specificDay].push(lowerName);
+          }
+        }
+      }
+    });
+
+    persistCustomExercises();
+    persistExerciseOrder();
+  }
+
+  // 3. Merge Body Metrics / BMI Profile (optional)
+  if (data.bmiProfile && typeof data.bmiProfile === "object") {
+    const p = data.bmiProfile;
     try {
-      const count = await importAllData(file);
-      alert(`Successfully restored ${count} data entries. Reloading...`);
-      location.reload();
+      const existingProfile = JSON.parse(localStorage.getItem("deadryx-bmi-profile-v1")) || {};
+      if (p.age) existingProfile.age = parseInt(p.age, 10);
+      if (p.heightCm) {
+        existingProfile.height = parseFloat(p.heightCm);
+        existingProfile.heightUnit = "cm";
+      }
+      if (p.weightKg) {
+        existingProfile.weight = parseFloat(p.weightKg);
+        existingProfile.weightUnit = "kg";
+      }
+      localStorage.setItem("deadryx-bmi-profile-v1", JSON.stringify(existingProfile));
+
+      if (p.targetWeightKg) {
+        const targetObj = {
+          targetWeight: parseFloat(p.targetWeightKg),
+          targetUnit: "kg",
+          deadlineDate: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]
+        };
+        localStorage.setItem("deadryx-bmi-target-v1", JSON.stringify(targetObj));
+      }
+
+      if (p.weightKg && p.heightCm) {
+        const heightM = parseFloat(p.heightCm) / 100;
+        const weightKg = parseFloat(p.weightKg);
+        const bmi = weightKg / (heightM * heightM);
+        const bmiHistory = JSON.parse(localStorage.getItem("deadryx-bmi-history-v1")) || [];
+        const todayStr = new Date().toISOString().split("T")[0];
+        if (!bmiHistory.some(h => h.date === todayStr)) {
+          bmiHistory.push({
+            date: todayStr,
+            weightKg: weightKg,
+            heightM: heightM,
+            bmi: parseFloat(bmi.toFixed(1))
+          });
+          localStorage.setItem("deadryx-bmi-history-v1", JSON.stringify(bmiHistory));
+        }
+      }
+      result.bmiUpdated = true;
     } catch (err) {
-      alert("Import failed: " + err.message);
+      console.warn("BMI merge note:", err);
     }
-    importFile.value = "";
+  }
+
+  // 3b. Merge Workout History & Logs if present
+  const fileHist = data["deadryx-historical-log-v1"] || data.historicalLog;
+  if (fileHist && typeof fileHist === "object") {
+    const parsedHist = typeof fileHist === "string" ? JSON.parse(fileHist) : fileHist;
+    historicalLog = { ...historicalLog, ...parsedHist };
+    localStorage.setItem(HISTORICAL_KEY, JSON.stringify(historicalLog));
+  }
+
+  const fileWork = data["deadryx-workout-history-v1"] || data.workoutHistory;
+  if (fileWork && typeof fileWork === "object") {
+    const parsedWork = typeof fileWork === "string" ? JSON.parse(fileWork) : fileWork;
+    for (const day in parsedWork) {
+      if (!workoutHistory[day]) workoutHistory[day] = {};
+      workoutHistory[day] = { ...workoutHistory[day], ...parsedWork[day] };
+    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(workoutHistory));
+  }
+
+  const fileAtt = data["deadryx-attendance-v1"] || data.attendance;
+  if (fileAtt && typeof fileAtt === "object") {
+    const parsedAtt = typeof fileAtt === "string" ? JSON.parse(fileAtt) : fileAtt;
+    attendanceHistory = { ...attendanceHistory, ...parsedAtt };
+    localStorage.setItem(ATTENDANCE_KEY, JSON.stringify(attendanceHistory));
+  }
+
+  const filePRs = data["deadryx-pr-records-v1"] || data.prRecords;
+  if (filePRs && typeof filePRs === "object") {
+    try {
+      const existingPRs = JSON.parse(localStorage.getItem("deadryx-pr-records-v1")) || {};
+      const parsedPRs = typeof filePRs === "string" ? JSON.parse(filePRs) : filePRs;
+      localStorage.setItem("deadryx-pr-records-v1", JSON.stringify({ ...existingPRs, ...parsedPRs }));
+    } catch (e) {}
+  }
+
+  // 4. Update sync state and push to Drive
+  triggerSync();
+
+  // 5. Re-render UI
+  if (typeof renderCalendar === "function") renderCalendar();
+  if (typeof renderSidebarSplit === "function") renderSidebarSplit();
+  if (typeof renderWorkoutDay === "function") renderWorkoutDay();
+  if (typeof renderBMIPanel === "function") renderBMIPanel();
+
+  return result;
+}
+
+// ============ AI WORKOUT PLAN MODAL & IMPORT ENGINE ============
+const DEADRYX_AI_PROMPT_TEXT = `You are a fitness onboarding assistant for the DEADRYX workout tracker app (https://deadryx.me). Your job is to gather the user's workout plan through a friendly conversation, then produce a machine-readable JSON file in the exact DEADRYX format.
+
+## Step 1 — Gather Workout Plan Information
+
+Ask the user the following questions ONE AT A TIME (wait for each answer before continuing):
+
+1. What is your name or what should I call you? (optional, for a friendly greeting)
+
+2. What type of training split do you follow?
+   Common options: Push/Pull/Legs, Upper/Lower, Bro Split (chest day, back day, etc.), Full Body, Custom
+   (Note: If the user provides/uploads an image, photo, or document of their gym routine or timetable, read it and extract their split directly!)
+
+3. For each training day, what muscle groups do you train?
+   Map their answer to these exact muscle group names DEADRYX understands:
+   - Chest, Back, Shoulders, Biceps, Triceps, Legs, Abs, Rest
+   - Standard defaults: Push = Chest + Shoulders + Triceps; Pull = Back + Biceps; Legs = Legs + Abs.
+   Get the assignment for all 7 days (Monday through Sunday). If a day is rest, use Rest.
+
+4. For each day, what specific exercises do you do? (and how many sets?)
+   - Accept exercise names in any format — you will normalize them.
+   - If they uploaded a routine image/document, extract the exercises and sets from it.
+   - Default to 3 sets if not specified.
+   - Identify the primary muscle group for each exercise.
+
+5. (Optional) Do you want to set up your body metrics?
+   If yes, ask:
+   - Current body weight (kg or lbs)
+   - Height (cm or ft/in)
+   - Target / goal weight (optional)
+   - Age (optional)
+
+## Step 2 — Produce the DEADRYX Import JSON
+
+Once you have all the information, produce a JSON object in EXACTLY this format. Output only the raw JSON:
+
+\`\`\`json
+{
+  "_meta": {
+    "app": "DEADRYX",
+    "type": "ai-workout-plan",
+    "version": 1,
+    "generatedAt": "2026-11-23T17:00:00Z",
+    "generatedBy": "AI Onboarding Assistant"
+  },
+  "split": [
+    { "day": "Monday",    "muscles": ["Chest", "Triceps"] },
+    { "day": "Tuesday",   "muscles": ["Back", "Biceps"] },
+    { "day": "Wednesday", "muscles": ["Legs", "Abs"] },
+    { "day": "Thursday",  "muscles": ["Shoulders"] },
+    { "day": "Friday",    "muscles": ["Chest", "Triceps"] },
+    { "day": "Saturday",  "muscles": ["Back", "Biceps"] },
+    { "day": "Sunday",    "muscles": ["Rest"] }
+  ],
+  "customExercises": [
+    {
+      "name": "Barbell Bench Press",
+      "muscle": "Chest",
+      "sets": 3,
+      "specificDay": "Monday"
+    },
+    {
+      "name": "Incline Dumbbell Press",
+      "muscle": "Chest",
+      "sets": 3,
+      "specificDay": "Monday"
+    }
+  ],
+  "bmiProfile": {
+    "weightKg": 75,
+    "heightCm": 178,
+    "targetWeightKg": 80,
+    "age": 24
+  }
+}
+\`\`\`
+
+## Rules for Producing the JSON:
+- Always include all 7 days (Monday through Sunday) in the split array.
+- In customExercises, set specificDay to the day name string (e.g. "Monday") for each exercise.
+- If an exercise is performed on multiple days, include separate entries with their respective specificDay.
+- If body metrics were skipped, omit the bmiProfile key.
+- Tell the user: "Your DEADRYX workout plan is ready! Save this as a .json file and import it into DEADRYX using 'Setup Workout Plan with AI' in Settings."`;
+
+const openAIPlanModalBtn = document.getElementById("openAIPlanModalBtn");
+const aiPlanModal = document.getElementById("aiPlanModal");
+const closeAIPlanModalBtn = document.getElementById("closeAIPlanModalBtn");
+const cancelAIPlanModalBtn = document.getElementById("cancelAIPlanModalBtn");
+const downloadAIPromptBtn = document.getElementById("downloadAIPromptBtn");
+const copyAIPromptBtn = document.getElementById("copyAIPromptBtn");
+const copyBtnText = document.getElementById("copyBtnText");
+
+const aiDropzone = document.getElementById("aiDropzone");
+const aiPlanFileInput = document.getElementById("aiPlanFileInput");
+const aiDropzoneText = document.getElementById("aiDropzoneText");
+const aiFileSelectedNotice = document.getElementById("aiFileSelectedNotice");
+const aiSelectedFileName = document.getElementById("aiSelectedFileName");
+const aiClearFileBtn = document.getElementById("aiClearFileBtn");
+const aiFileErrorNotice = document.getElementById("aiFileErrorNotice");
+const executeAIPlanImportBtn = document.getElementById("executeAIPlanImportBtn");
+
+let parsedAIPlanData = null;
+
+// Modal Open & Close
+if (openAIPlanModalBtn && aiPlanModal) {
+  openAIPlanModalBtn.addEventListener("click", () => {
+    aiPlanModal.classList.add("active");
+  });
+}
+
+function closeAIPlanModal() {
+  if (aiPlanModal) aiPlanModal.classList.remove("active");
+}
+
+if (closeAIPlanModalBtn) closeAIPlanModalBtn.addEventListener("click", closeAIPlanModal);
+if (cancelAIPlanModalBtn) cancelAIPlanModalBtn.addEventListener("click", closeAIPlanModal);
+window.addEventListener("click", (e) => {
+  if (e.target === aiPlanModal) {
+    closeAIPlanModal();
+  }
+});
+
+// Download Prompt File
+if (downloadAIPromptBtn) {
+  downloadAIPromptBtn.addEventListener("click", () => {
+    const blob = new Blob([DEADRYX_AI_PROMPT_TEXT], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "DEADRYX_AI_PROMPT.txt";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+}
+
+// Copy Prompt to Clipboard
+if (copyAIPromptBtn) {
+  copyAIPromptBtn.addEventListener("click", () => {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(DEADRYX_AI_PROMPT_TEXT).then(() => {
+        if (copyBtnText) copyBtnText.textContent = "✓ Copied!";
+        setTimeout(() => { if (copyBtnText) copyBtnText.textContent = "Copy Prompt Text"; }, 2000);
+      }).catch(() => fallbackCopy());
+    } else {
+      fallbackCopy();
+    }
+
+    function fallbackCopy() {
+      const textarea = document.createElement("textarea");
+      textarea.value = DEADRYX_AI_PROMPT_TEXT;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+      if (copyBtnText) copyBtnText.textContent = "✓ Copied!";
+      setTimeout(() => { if (copyBtnText) copyBtnText.textContent = "Copy Prompt Text"; }, 2000);
+    }
+  });
+}
+
+// Mode Selection Cards (Merge vs Reset)
+const modeCards = document.querySelectorAll(".import-mode-card");
+modeCards.forEach(card => {
+  card.addEventListener("click", () => {
+    modeCards.forEach(c => c.classList.remove("active"));
+    card.classList.add("active");
+  });
+});
+
+// Prevent default browser behavior of opening dropped files in tab
+window.addEventListener("dragover", (e) => e.preventDefault(), false);
+window.addEventListener("drop", (e) => e.preventDefault(), false);
+
+// Dropzone & File Handling
+if (aiDropzone && aiPlanFileInput) {
+  aiDropzone.addEventListener("click", () => aiPlanFileInput.click());
+
+  aiDropzone.addEventListener("dragenter", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+    aiDropzone.classList.add("dragover");
+  });
+
+  aiDropzone.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+    aiDropzone.classList.add("dragover");
+  });
+
+  aiDropzone.addEventListener("dragleave", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.relatedTarget && aiDropzone.contains(e.relatedTarget)) return;
+    aiDropzone.classList.remove("dragover");
+  });
+
+  aiDropzone.addEventListener("drop", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    aiDropzone.classList.remove("dragover");
+    const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (file) {
+      handleUploadedAIPlanFile(file);
+    }
+  });
+
+  // Also support dropping anywhere on modal content while modal is open
+  const aiModalContent = aiPlanModal?.querySelector(".ai-modal-content");
+  if (aiModalContent) {
+    aiModalContent.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+    });
+    aiModalContent.addEventListener("drop", (e) => {
+      // If dropped outside aiDropzone but inside modal, still handle file
+      if (e.target !== aiDropzone && !aiDropzone.contains(e.target)) {
+        e.preventDefault();
+        e.stopPropagation();
+        const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (file) {
+          handleUploadedAIPlanFile(file);
+        }
+      }
+    });
+  }
+
+  aiPlanFileInput.addEventListener("change", (e) => {
+    if (e.target.files && e.target.files[0]) {
+      handleUploadedAIPlanFile(e.target.files[0]);
+    }
+  });
+}
+
+if (aiClearFileBtn) {
+  aiClearFileBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    parsedAIPlanData = null;
+    if (aiPlanFileInput) aiPlanFileInput.value = "";
+    if (aiFileSelectedNotice) aiFileSelectedNotice.style.display = "none";
+    if (aiDropzone) aiDropzone.style.display = "flex";
+    if (aiFileErrorNotice) {
+      aiFileErrorNotice.style.display = "none";
+      aiFileErrorNotice.textContent = "";
+    }
+    if (executeAIPlanImportBtn) executeAIPlanImportBtn.disabled = true;
+  });
+}
+
+async function handleUploadedAIPlanFile(file) {
+  if (!file) return;
+
+  if (aiFileErrorNotice) {
+    aiFileErrorNotice.style.display = "none";
+    aiFileErrorNotice.textContent = "";
+  }
+
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+
+    // Validate structure & normalize backup or AI plan keys
+    const splitData = data.split || data["deadryx-split-config-v1"];
+    const customExData = data.customExercises || data["deadryx-custom-exercises-v1"];
+    const hasHistory = data.workoutHistory || data["deadryx-workout-history-v1"] || data.historicalLog || data["deadryx-historical-log-v1"];
+
+    if (!data || typeof data !== "object" || (!splitData && !customExData && !hasHistory)) {
+      throw new Error("File does not contain a valid DEADRYX workout plan JSON (missing 'split' or 'customExercises').");
+    }
+
+    if (!data.split && splitData) data.split = splitData;
+    if (!data.customExercises && customExData) data.customExercises = customExData;
+
+    parsedAIPlanData = data;
+
+    if (aiSelectedFileName) aiSelectedFileName.textContent = file.name;
+    if (aiFileSelectedNotice) aiFileSelectedNotice.style.display = "flex";
+    if (aiDropzone) aiDropzone.style.display = "none";
+    if (executeAIPlanImportBtn) executeAIPlanImportBtn.disabled = false;
+  } catch (err) {
+    parsedAIPlanData = null;
+    if (executeAIPlanImportBtn) executeAIPlanImportBtn.disabled = true;
+    if (aiFileErrorNotice) {
+      aiFileErrorNotice.textContent = "Error: " + err.message;
+      aiFileErrorNotice.style.display = "block";
+    }
+  }
+}
+
+// Reset / Clean Slate Application
+function resetAndApplyAIWorkoutPlan(data) {
+  if (!data || typeof data !== "object") {
+    throw new Error("Invalid plan data.");
+  }
+
+  // 1. Restore workout history from file if included, otherwise wipe for a clean slate
+  const fileWorkoutHistory = data["deadryx-workout-history-v1"] || data.workoutHistory;
+  const fileHistoricalLog = data["deadryx-historical-log-v1"] || data.historicalLog;
+  const fileAttendance = data["deadryx-attendance-v1"] || data.attendance;
+  const filePRs = data["deadryx-pr-records-v1"] || data.prRecords;
+  const fileTargets = data["deadryx-targets-v1"] || data.targets;
+  const fileNotes = data["deadryx-notes-v1"] || data.notes;
+
+  if (fileWorkoutHistory || fileHistoricalLog) {
+    workoutHistory = (typeof fileWorkoutHistory === "string" ? JSON.parse(fileWorkoutHistory) : fileWorkoutHistory) || {};
+    historicalLog = (typeof fileHistoricalLog === "string" ? JSON.parse(fileHistoricalLog) : fileHistoricalLog) || {};
+    attendanceHistory = (typeof fileAttendance === "string" ? JSON.parse(fileAttendance) : fileAttendance) || {};
+    customExercises = [];
+    hiddenExercises = [];
+    exerciseOrder = {};
+
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(workoutHistory));
+    localStorage.setItem(HISTORICAL_KEY, JSON.stringify(historicalLog));
+    localStorage.setItem(ATTENDANCE_KEY, JSON.stringify(attendanceHistory));
+    localStorage.setItem(CUSTOM_EXERCISES_KEY, JSON.stringify([]));
+    localStorage.setItem(HIDDEN_EXERCISES_KEY, JSON.stringify([]));
+    localStorage.setItem(EXERCISE_ORDER_KEY, JSON.stringify({}));
+
+    if (filePRs) {
+      localStorage.setItem("deadryx-pr-records-v1", typeof filePRs === "string" ? filePRs : JSON.stringify(filePRs));
+    }
+    if (fileTargets) {
+      localStorage.setItem("deadryx-targets-v1", typeof fileTargets === "string" ? fileTargets : JSON.stringify(fileTargets));
+    }
+    if (fileNotes) {
+      localStorage.setItem("deadryx-notes-v1", typeof fileNotes === "string" ? fileNotes : JSON.stringify(fileNotes));
+    }
+  } else {
+    workoutHistory = {};
+    historicalLog = {};
+    attendanceHistory = {};
+    customExercises = [];
+    hiddenExercises = [];
+    exerciseOrder = {};
+
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({}));
+    localStorage.setItem(HISTORICAL_KEY, JSON.stringify({}));
+    localStorage.setItem(ATTENDANCE_KEY, JSON.stringify({}));
+    localStorage.setItem(CUSTOM_EXERCISES_KEY, JSON.stringify([]));
+    localStorage.setItem(HIDDEN_EXERCISES_KEY, JSON.stringify([]));
+    localStorage.setItem(EXERCISE_ORDER_KEY, JSON.stringify({}));
+    localStorage.setItem("deadryx-pr-records-v1", JSON.stringify({}));
+  }
+
+  // 2. Set new split configuration
+  if (Array.isArray(data.split) && data.split.length > 0) {
+    const dayMap = {};
+    data.split.forEach(s => {
+      if (s && s.day && Array.isArray(s.muscles)) {
+        dayMap[s.day.trim().toLowerCase()] = s.muscles.map(m => m.trim());
+      }
+    });
+
+    workoutPlan.forEach(planDay => {
+      const dayKey = planDay.day.trim().toLowerCase();
+      if (dayMap[dayKey]) {
+        planDay.muscles = [...dayMap[dayKey]];
+      }
+    });
+    persistWorkoutPlan();
+  }
+
+  // 3. Set custom exercises
+  if (Array.isArray(data.customExercises)) {
+    data.customExercises.forEach(ex => {
+      if (!ex.name) return;
+      const cleanName = ex.name.trim();
+      const specificDay = ex.specificDay ? ex.specificDay.trim() : null;
+      customExercises.push({
+        name: cleanName,
+        muscle: ex.muscle ? ex.muscle.trim() : "Other",
+        specificDay: specificDay,
+        sets: parseInt(ex.sets, 10) || 3
+      });
+      if (specificDay) {
+        if (!exerciseOrder[specificDay]) exerciseOrder[specificDay] = [];
+        exerciseOrder[specificDay].push(cleanName.toLowerCase());
+      }
+    });
+    persistCustomExercises();
+    persistExerciseOrder();
+  }
+
+  // 4. Set BMI metrics if provided
+  if (data.bmiProfile && typeof data.bmiProfile === "object") {
+    const p = data.bmiProfile;
+    try {
+      const profile = {};
+      if (p.age) profile.age = parseInt(p.age, 10);
+      if (p.heightCm) {
+        profile.height = parseFloat(p.heightCm);
+        profile.heightUnit = "cm";
+      }
+      if (p.weightKg) {
+        profile.weight = parseFloat(p.weightKg);
+        profile.weightUnit = "kg";
+      }
+      localStorage.setItem("deadryx-bmi-profile-v1", JSON.stringify(profile));
+
+      if (p.targetWeightKg) {
+        const targetObj = {
+          targetWeight: parseFloat(p.targetWeightKg),
+          targetUnit: "kg",
+          deadlineDate: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]
+        };
+        localStorage.setItem("deadryx-bmi-target-v1", JSON.stringify(targetObj));
+      }
+
+      if (p.weightKg && p.heightCm) {
+        const heightM = parseFloat(p.heightCm) / 100;
+        const weightKg = parseFloat(p.weightKg);
+        const bmi = weightKg / (heightM * heightM);
+        const history = [{
+          date: new Date().toISOString().split("T")[0],
+          weightKg: weightKg,
+          heightM: heightM,
+          bmi: parseFloat(bmi.toFixed(1))
+        }];
+        localStorage.setItem("deadryx-bmi-history-v1", JSON.stringify(history));
+      }
+    } catch (e) {
+      console.warn("BMI profile reset note:", e);
+    }
+  }
+
+  // 5. Sync to Drive
+  triggerSync();
+
+  // 6. Refresh UI
+  if (typeof renderCalendar === "function") renderCalendar();
+  if (typeof renderSidebarSplit === "function") renderSidebarSplit();
+  if (typeof renderWorkoutDay === "function") renderWorkoutDay();
+  if (typeof renderAttendance === "function") renderAttendance();
+  if (typeof renderBMIPanel === "function") renderBMIPanel();
+}
+
+// Execute Import (Merge vs Reset)
+if (executeAIPlanImportBtn) {
+  executeAIPlanImportBtn.addEventListener("click", () => {
+    if (!parsedAIPlanData) return;
+
+    const selectedMode = document.querySelector('input[name="aiImportMode"]:checked')?.value || "merge";
+
+    try {
+      if (selectedMode === "reset") {
+        if (!confirm("Are you sure you want to start fresh? This will remove all previous workout records and set up only this new plan.")) {
+          return;
+        }
+        resetAndApplyAIWorkoutPlan(parsedAIPlanData);
+        const msg = "Clean slate applied! Past workout logs cleared, and your new AI plan is ready.";
+        if (typeof showToast === "function") {
+          showToast(msg, "success");
+        } else {
+          alert(msg);
+        }
+        if (saveMessage) {
+          saveMessage.textContent = msg;
+          saveMessage.style.color = "var(--green)";
+        }
+      } else {
+        // Merge / Overwrite without wiping history
+        const res = mergeAIWorkoutPlan(parsedAIPlanData);
+        let msg = `Plan updated! Added ${res.exercisesAdded} exercise(s)`;
+        if (res.splitUpdated > 0) msg += `, updated split for ${res.splitUpdated} day(s)`;
+        if (res.bmiUpdated) msg += `, saved body metrics`;
+        msg += ". Past workout records preserved!";
+
+        if (typeof showToast === "function") {
+          showToast(msg, "success");
+        } else {
+          alert(msg);
+        }
+        if (saveMessage) {
+          saveMessage.textContent = msg;
+          saveMessage.style.color = "var(--green)";
+        }
+      }
+
+      // Close modal & reset file state
+      closeAIPlanModal();
+      parsedAIPlanData = null;
+      if (aiPlanFileInput) aiPlanFileInput.value = "";
+      if (aiFileSelectedNotice) aiFileSelectedNotice.style.display = "none";
+      if (aiDropzone) aiDropzone.style.display = "flex";
+      executeAIPlanImportBtn.disabled = true;
+    } catch (err) {
+      alert("Failed to apply plan: " + err.message);
+    }
   });
 }
 
@@ -1489,4 +2301,118 @@ document.addEventListener("DOMContentLoaded", () => {
       settingsModal.classList.remove("active");
     }
   });
+});
+
+// ==================== WELCOME ONBOARDING MODAL ====================
+const WELCOME_SEEN_KEY = "deadryx-welcome-seen-v1";
+
+function isUserSignedIn() {
+  try {
+    const saved = localStorage.getItem("gdrive_access_token");
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed && (!parsed.expires_at || Date.now() < parsed.expires_at)) {
+        return true;
+      }
+    }
+    const userInfo = localStorage.getItem("gdrive_user_info");
+    if (userInfo) return true;
+    if (typeof gapi !== "undefined" && gapi.client && typeof gapi.client.getToken === "function" && gapi.client.getToken()) {
+      return true;
+    }
+  } catch (e) { /* ignore */ }
+  return false;
+}
+
+function openWelcomeModal() {
+  const modal = document.getElementById("welcomeModal");
+  if (modal) {
+    modal.classList.add("active");
+  }
+}
+
+function closeWelcomeModal(shouldPersist = true) {
+  const modal = document.getElementById("welcomeModal");
+  if (modal) {
+    modal.classList.remove("active");
+  }
+  if (shouldPersist) {
+    const dontShow = document.getElementById("welcomeDontShowAgainCheckbox");
+    if (!dontShow || dontShow.checked) {
+      localStorage.setItem(WELCOME_SEEN_KEY, "true");
+    }
+  }
+}
+
+window.openWelcomeModal = openWelcomeModal;
+window.closeWelcomeModal = closeWelcomeModal;
+
+document.addEventListener("DOMContentLoaded", () => {
+  const welcomeModal = document.getElementById("welcomeModal");
+  const closeWelcomeModalBtn = document.getElementById("closeWelcomeModalBtn");
+  const welcomeGetStartedBtn = document.getElementById("welcomeGetStartedBtn");
+  const welcomeConnectGDriveBtn = document.getElementById("welcomeConnectGDriveBtn");
+  const welcomeImportAIBtn = document.getElementById("welcomeImportAIBtn");
+  const sidebarWelcomeGuideBtn = document.getElementById("sidebarWelcomeGuideBtn");
+
+  // Re-open from sidebar
+  if (sidebarWelcomeGuideBtn) {
+    sidebarWelcomeGuideBtn.addEventListener("click", () => {
+      openWelcomeModal();
+    });
+  }
+
+  // Close button
+  if (closeWelcomeModalBtn) {
+    closeWelcomeModalBtn.addEventListener("click", () => {
+      closeWelcomeModal(true);
+    });
+  }
+
+  // Get Started button
+  if (welcomeGetStartedBtn) {
+    welcomeGetStartedBtn.addEventListener("click", () => {
+      closeWelcomeModal(true);
+    });
+  }
+
+  // Connect Google Drive button
+  if (welcomeConnectGDriveBtn) {
+    welcomeConnectGDriveBtn.addEventListener("click", () => {
+      closeWelcomeModal(true);
+      if (typeof handleAuthClick === "function") {
+        handleAuthClick();
+      }
+    });
+  }
+
+  // Import AI Plan button
+  if (welcomeImportAIBtn) {
+    welcomeImportAIBtn.addEventListener("click", () => {
+      closeWelcomeModal(true);
+      const aiModal = document.getElementById("aiPlanModal");
+      if (aiModal) {
+        aiModal.classList.add("active");
+      }
+    });
+  }
+
+  // Click outside modal backdrop to close
+  if (welcomeModal) {
+    welcomeModal.addEventListener("click", (e) => {
+      if (e.target === welcomeModal) {
+        closeWelcomeModal(true);
+      }
+    });
+  }
+
+  // Automatic Trigger: Show when user lands on site if NOT signed in and NOT previously seen
+  if (!isUserSignedIn() && localStorage.getItem(WELCOME_SEEN_KEY) !== "true") {
+    // Small delay (700ms) after landing for smooth entrance
+    setTimeout(() => {
+      if (!isUserSignedIn() && localStorage.getItem(WELCOME_SEEN_KEY) !== "true") {
+        openWelcomeModal();
+      }
+    }, 700);
+  }
 });

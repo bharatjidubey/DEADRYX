@@ -15,9 +15,51 @@ let chartInstance = null;
 let historicalData = [];
 let currentFilteredData = [];
 let currentViewMode = "thisYear";
+let currentLabels = [];
+let currentFullDates = [];
+let currentDataPoints = [];
 
 const params = new URLSearchParams(window.location.search);
 let exerciseName = params.get("exercise") || "";
+
+// Custom exact-dot interaction mode with 2D distance threshold (ignores skipped/null days)
+if (typeof Chart !== "undefined") {
+  const modes = (Chart.Interaction && Chart.Interaction.modes) || {};
+  modes.exactDot = function(chart, e, options, useFinalPosition) {
+    const meta = chart.getDatasetMeta(0);
+    if (!meta || !meta.data || !meta.data.length) return [];
+
+    let posX = (typeof e.x === "number") ? e.x : (e.native && typeof e.native.offsetX === "number" ? e.native.offsetX : 0);
+    let posY = (typeof e.y === "number") ? e.y : (e.native && typeof e.native.offsetY === "number" ? e.native.offsetY : 0);
+    if (Chart.helpers && typeof Chart.helpers.getRelativePosition === "function") {
+      try {
+        const rel = Chart.helpers.getRelativePosition(e, chart);
+        if (rel && typeof rel.x === "number") {
+          posX = rel.x;
+          posY = rel.y;
+        }
+      } catch (err) {}
+    }
+
+    const maxDistance = 35; // 35px Euclidean radius threshold
+    let nearest = null;
+    let minDistance = maxDistance;
+
+    for (let i = 0; i < meta.data.length; i++) {
+      const pt = meta.data[i];
+      if (!pt || pt.skip || typeof pt.x !== "number" || typeof pt.y !== "number" || isNaN(pt.x) || isNaN(pt.y)) {
+        continue;
+      }
+      const dist = Math.hypot(pt.x - posX, pt.y - posY);
+      if (dist <= minDistance) {
+        minDistance = dist;
+        nearest = { element: pt, index: i, datasetIndex: 0 };
+      }
+    }
+
+    return nearest ? [nearest] : [];
+  };
+}
 
 function getAllAvailableExercises() {
   const raw = loadHistoricalLog();
@@ -32,7 +74,15 @@ function getAllAvailableExercises() {
     }
   });
 
-  // 2. Add standard popular exercises
+  // 2. Add custom exercises from user plan
+  try {
+    const customs = JSON.parse(localStorage.getItem("deadryx-custom-exercises-v1") || "[]");
+    customs.forEach(c => {
+      if (c && c.name) set.add(c.name);
+    });
+  } catch {}
+
+  // 3. Add standard popular exercises
   const DEFAULT_LIST = [
     "Barbell Bench Press", "Incline Dumbbell Press", "Cable Crossover",
     "Barbell Squat", "Leg Press", "Romanian Deadlift", "Bulgarian Split Squat",
@@ -159,6 +209,7 @@ function parseDeadline(text) {
 }
 
 function renderTargetBlock() {
+  if (!targetWeightInput || !targetDateInput || !saveTargetBtn) return;
   const targets = loadTargets();
   const exTargets = targets[exerciseName] || {};
   const t = exTargets[currentViewMode];
@@ -198,14 +249,18 @@ function renderTargetBlock() {
 
 function processHistoricalData() {
   const rawData = loadHistoricalLog();
-  const dates = Object.keys(rawData).sort((a, b) => new Date(a) - new Date(b));
+  const dates = Object.keys(rawData).sort();
 
   const processed = [];
 
+  const cleanTarget = (exerciseName || "").trim().toLowerCase();
+
   dates.forEach(date => {
     const dayData = rawData[date];
-    if (dayData[exerciseName]) {
-      const sets = dayData[exerciseName];
+    if (!dayData) return;
+    const matchKey = Object.keys(dayData).find(k => k.trim().toLowerCase() === cleanTarget);
+    if (matchKey && dayData[matchKey]) {
+      const sets = dayData[matchKey];
       let maxWeight = 0;
 
       Object.keys(sets).forEach(setKey => {
@@ -228,17 +283,17 @@ function renderChart(viewMode = "thisYear") {
   currentViewMode = viewMode;
 
   if (!historicalData.length) {
-    progressChartCanvas.style.display = "none";
-    targetPanel.style.display = "flex";
-    emptyState.style.display = "block";
+    if (progressChartCanvas) progressChartCanvas.style.display = "none";
+    if (targetPanel) targetPanel.style.display = "flex";
+    if (emptyState) emptyState.style.display = "block";
     currentFilteredData = [];
     renderTargetBlock();
     return;
   }
 
-  progressChartCanvas.style.display = "block";
-  targetPanel.style.display = "flex";
-  emptyState.style.display = "none";
+  if (progressChartCanvas) progressChartCanvas.style.display = "block";
+  if (targetPanel) targetPanel.style.display = "flex";
+  if (emptyState) emptyState.style.display = "none";
 
   let filteredData = historicalData;
 
@@ -253,16 +308,35 @@ function renderChart(viewMode = "thisYear") {
     });
   }
 
+  if (!filteredData.length) {
+    if (progressChartCanvas) progressChartCanvas.style.display = "none";
+    if (targetPanel) targetPanel.style.display = "flex";
+    if (emptyState) {
+      emptyState.style.display = "block";
+      emptyState.textContent = viewMode === "thisYear"
+        ? `No workout sessions recorded for ${exerciseName} this year (${new Date().getFullYear()}). Switch to 'Lifetime' or log a workout!`
+        : `No historical data available for ${exerciseName} yet. Complete and save a workout to see your progress!`;
+    }
+    currentFilteredData = [];
+    renderTargetBlock();
+    if (chartInstance) {
+      chartInstance.destroy();
+      chartInstance = null;
+    }
+    return;
+  }
+
   currentFilteredData = filteredData;
   renderTargetBlock();
 
   let labels = [];
+  let fullDates = [];
   let dataPoints = [];
 
   if (viewMode === "thisYear") {
     const currentYear = new Date().getFullYear();
-    const startOfYear = new Date(`${currentYear}-01-01T00:00:00`);
-    const endOfYear = new Date(`${currentYear}-12-31T23:59:59`);
+    const startOfYear = new Date(currentYear, 0, 1, 0, 0, 0);
+    const endOfYear = new Date(currentYear, 11, 31, 23, 59, 59);
 
     const dataMap = {};
     filteredData.forEach(item => {
@@ -271,18 +345,39 @@ function renderChart(viewMode = "thisYear") {
 
     for (let d = new Date(startOfYear); d <= endOfYear; d.setDate(d.getDate() + 1)) {
       const dateStr = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-      const locDate = new Date(d.getTime() - (d.getTimezoneOffset() * 60000));
-      const isoD = locDate.toISOString().split("T")[0];
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const dayNum = String(d.getDate()).padStart(2, "0");
+      const isoD = `${y}-${m}-${dayNum}`;
 
       labels.push(dateStr);
+      fullDates.push(`${dateStr}, ${y}`);
       dataPoints.push(dataMap[isoD] !== undefined ? dataMap[isoD] : null);
     }
   } else {
     labels = filteredData.map(item => {
-      const d = new Date(item.date);
-      return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      const [y, m, d] = item.date.split("-");
+      const dateObj = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10));
+      return dateObj.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    });
+    fullDates = filteredData.map(item => {
+      const [y, m, d] = item.date.split("-");
+      const dateObj = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10));
+      return dateObj.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
     });
     dataPoints = filteredData.map(item => item.maxWeight);
+  }
+
+  currentLabels = labels;
+  currentFullDates = fullDates;
+  currentDataPoints = dataPoints;
+
+  // Reset live inspect badge to idle hint
+  const hintEl = document.getElementById("inspectHint");
+  const dataEl = document.getElementById("inspectData");
+  if (hintEl && dataEl) {
+    hintEl.style.display = "inline-flex";
+    dataEl.style.display = "none";
   }
 
   if (chartInstance) {
@@ -372,8 +467,12 @@ function renderChart(viewMode = "thisYear") {
         pointBackgroundColor: "#0b0f16",
         pointBorderColor: "#36e28a",
         pointBorderWidth: 2,
-        pointRadius: 4,
-        pointHoverRadius: 6,
+        pointRadius: 6,
+        pointHoverRadius: 10,
+        pointHitRadius: 35,
+        pointHoverBackgroundColor: "#36e28a",
+        pointHoverBorderColor: "#ffffff",
+        pointHoverBorderWidth: 2.5,
         fill: true,
         spanGaps: true,
         tension: 0.3
@@ -383,16 +482,74 @@ function renderChart(viewMode = "thisYear") {
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      interaction: {
+        mode: 'exactDot',
+        intersect: false
+      },
+      onHover: function(event, activeElements) {
+        const hintEl = document.getElementById("inspectHint");
+        const dataEl = document.getElementById("inspectData");
+        const dateEl = document.getElementById("inspectDate");
+        const weightEl = document.getElementById("inspectWeight");
+
+        if (activeElements && activeElements.length > 0) {
+          const idx = activeElements[0].index;
+          const val = dataPoints[idx];
+          if (val !== null && val !== undefined) {
+            if (hintEl) hintEl.style.display = "none";
+            if (dataEl) dataEl.style.display = "inline-flex";
+            if (dateEl) dateEl.textContent = "📅 " + (fullDates[idx] || labels[idx]);
+            if (weightEl) weightEl.textContent = "🏋️ Max: " + val + " kg";
+            return;
+          }
+        }
+        if (hintEl) hintEl.style.display = "inline-flex";
+        if (dataEl) dataEl.style.display = "none";
+      },
+      onClick: function(event, activeElements) {
+        const hintEl = document.getElementById("inspectHint");
+        const dataEl = document.getElementById("inspectData");
+        const dateEl = document.getElementById("inspectDate");
+        const weightEl = document.getElementById("inspectWeight");
+
+        if (activeElements && activeElements.length > 0) {
+          const idx = activeElements[0].index;
+          const val = dataPoints[idx];
+          if (val !== null && val !== undefined) {
+            if (hintEl) hintEl.style.display = "none";
+            if (dataEl) dataEl.style.display = "inline-flex";
+            if (dateEl) dateEl.textContent = "📅 " + (fullDates[idx] || labels[idx]);
+            if (weightEl) weightEl.textContent = "🏋️ Max: " + val + " kg";
+          }
+        }
+      },
       plugins: {
         legend: { display: false },
         tooltip: {
+          enabled: true,
+          mode: 'exactDot',
+          intersect: false,
           backgroundColor: "#141b25",
           titleColor: "#f4f7fb",
           bodyColor: "#36e28a",
-          borderColor: "rgba(255, 255, 255, 0.09)",
+          borderColor: "rgba(255, 255, 255, 0.14)",
           borderWidth: 1,
           padding: 10,
-          displayColors: false
+          displayColors: false,
+          cornerRadius: 8,
+          filter: function(tooltipItem) {
+            return tooltipItem.raw !== null && tooltipItem.raw !== undefined;
+          },
+          callbacks: {
+            title: function(items) {
+              if (!items || !items.length) return "";
+              const idx = items[0].dataIndex !== undefined ? items[0].dataIndex : items[0].index;
+              return fullDates[idx] || labels[idx] || "";
+            },
+            label: function(item) {
+              return `Max Weight: ${item.raw} kg`;
+            }
+          }
         }
       },
       scales: {
@@ -425,32 +582,38 @@ initExerciseSelect();
 historicalData = processHistoricalData();
 renderChart("thisYear");
 
-btnThisYear.addEventListener("click", () => {
-  btnThisYear.classList.add("active");
-  btnLifetime.classList.remove("active");
-  renderChart("thisYear");
-});
+if (btnThisYear) {
+  btnThisYear.addEventListener("click", () => {
+    btnThisYear.classList.add("active");
+    if (btnLifetime) btnLifetime.classList.remove("active");
+    renderChart("thisYear");
+  });
+}
 
-btnLifetime.addEventListener("click", () => {
-  btnLifetime.classList.add("active");
-  btnThisYear.classList.remove("active");
-  renderChart("lifetime");
-});
+if (btnLifetime) {
+  btnLifetime.addEventListener("click", () => {
+    btnLifetime.classList.add("active");
+    if (btnThisYear) btnThisYear.classList.remove("active");
+    renderChart("lifetime");
+  });
+}
 
-saveTargetBtn.addEventListener("click", () => {
-  const w = parseFloat(targetWeightInput.value);
-  const d = parseDeadline(targetDateInput.value);
-  if (!w) return;
+if (saveTargetBtn) {
+  saveTargetBtn.addEventListener("click", () => {
+    const w = parseFloat(targetWeightInput.value);
+    const d = parseDeadline(targetDateInput.value);
+    if (!w) return;
 
-  const targets = loadTargets();
-  if (!targets[exerciseName]) targets[exerciseName] = {};
-  targets[exerciseName][currentViewMode] = { weight: w, deadline: d };
-  saveTargets(targets);
-  triggerSync();
+    const targets = loadTargets();
+    if (!targets[exerciseName]) targets[exerciseName] = {};
+    targets[exerciseName][currentViewMode] = { weight: w, deadline: d };
+    saveTargets(targets);
+    triggerSync();
 
-  renderTargetBlock();
-  renderChart(currentViewMode);
-});
+    renderTargetBlock();
+    renderChart(currentViewMode);
+  });
+}
 
 // (Mobile Sidebar Drawer is now centrally handled in shared.js)
 
@@ -467,6 +630,18 @@ if (calendarBtn && hiddenPicker) {
   hiddenPicker.addEventListener("change", () => {
     if (hiddenPicker.value) {
       targetDateInput.value = formatDeadline(hiddenPicker.value);
+    }
+  });
+}
+
+// Reset inspect badge when mouse leaves canvas
+if (progressChartCanvas) {
+  progressChartCanvas.addEventListener("mouseleave", () => {
+    const hintEl = document.getElementById("inspectHint");
+    const dataEl = document.getElementById("inspectData");
+    if (hintEl && dataEl) {
+      hintEl.style.display = "inline-flex";
+      dataEl.style.display = "none";
     }
   });
 }

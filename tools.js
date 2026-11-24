@@ -805,9 +805,10 @@ const RPE_OPTIONS = [
   { value: '10',  label: 'RPE 10 (0 RIR)' }
 ];
 
-function getRPESelectHTML(currentValue, dataAttrs) {
+function getRPESelectHTML(currentValue, dataAttrs, ariaLabel) {
   const attrs = dataAttrs || '';
-  let html = `<select class="rpe-select" ${attrs}>`;
+  const labelAttr = ariaLabel ? `aria-label="${ariaLabel}"` : '';
+  let html = `<select class="rpe-select" ${labelAttr} ${attrs}>`;
   RPE_OPTIONS.forEach(opt => {
     const selected = opt.value === String(currentValue || '') ? 'selected' : '';
     html += `<option value="${opt.value}" ${selected}>${opt.label}</option>`;

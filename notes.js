@@ -22,7 +22,13 @@ function getAllAvailableExercises() {
     });
   } catch {}
 
-  // 3. Standard popular list
+  // 3. Custom plan exercises
+  try {
+    const rawCustom = JSON.parse(localStorage.getItem("deadryx-custom-exercises-v1") || "[]");
+    rawCustom.forEach(c => { if (c && c.name) set.add(c.name); });
+  } catch {}
+
+  // 4. Standard popular list
   const DEFAULT_LIST = [
     "Barbell Bench Press", "Incline Dumbbell Press", "Cable Crossover",
     "Barbell Squat", "Leg Press", "Romanian Deadlift", "Bulgarian Split Squat",

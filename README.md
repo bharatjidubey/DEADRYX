@@ -1,9 +1,9 @@
-# DEADRYX 🏋️‍♂️
+﻿# DEADRYX 🏋️‍♂️
 
 > **The Free, Offline-First Gym Workout Tracker & Pro-Athlete Platform.**
 > No ads. No subscriptions. No forced accounts. Your training data belongs to you.
 
-[![Live Web App](https://img.shields.io/badge/Live%20App-deadryx.netlify.app-36e28a?style=for-the-badge&logo=netlify)](https://deadryx.netlify.app)
+[![Live Web App](https://img.shields.io/badge/Live%20App-deadryx.me-36e28a?style=for-the-badge&logo=netlify)](https://deadryx.me)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](LICENSE)
 [![PWA Ready](https://img.shields.io/badge/PWA-Offline%20First-60a5fa?style=for-the-badge&logo=pwa)](manifest.json)
 [![Pure Vanilla](https://img.shields.io/badge/Stack-Vanilla%20HTML%20%7C%20CSS%20%7C%20JS-yellow?style=for-the-badge&logo=javascript)](docs/ARCHITECTURE.md)
@@ -62,7 +62,7 @@ DEADRYX takes pride in a **zero-dependency build philosophy**:
 | **Styling** | Vanilla CSS3 | Custom Properties, Glassmorphism, Responsive Grid (360px+) |
 | **Logic** | Vanilla JavaScript (ES6+) | Event-delegated, modular architecture |
 | **Storage** | LocalStorage + IndexedDB | Key-value application state & binary transformation media |
-| **Offline** | Service Worker (`deadryx-cache-v5`) | Network-first asset caching, full offline PWA execution |
+| **Offline** | Service Worker (`deadryx-cache-v6`) | Network-first asset caching, full offline PWA execution |
 | **Cloud** | Google Drive REST API v3 | Client-side authorization & serverless backup |
 | **Hosting** | Netlify / Cloudflare Pages | Edge-deployed static files with security headers |
 
@@ -108,14 +108,19 @@ DEADRYX/
 ├── bmi.js                   # Body Mass Index & caloric target calculator
 ├── memories.js              # IndexedDB media storage & timeline renderer
 ├── gdrive-sync.js           # Google Drive cloud sync integration
-├── sw.js                    # Service Worker offline cache engine (v5)
+├── sw.js                    # Service Worker offline cache engine (v6)
 ├── manifest.json            # PWA manifest metadata
+├── tests/                   # Automated test harness & 60-day simulation suite
+│   ├── test-runner.html     # 16 automated test suites (47 assertions)
+│   ├── simulation-runner.html # 60-day lifecycle simulation dashboard
+│   └── simulation-engine.js # Core progression & anti-tamper engine
 ├── README.md                # Project documentation overview
 ├── LICENSE                  # MIT License
 ├── CHANGELOG.md             # Version release history
 ├── CONTRIBUTING.md          # Contribution guidelines
 ├── SECURITY.md              # Vulnerability disclosure policy
 ├── THIRD_PARTY_LICENSES.md  # Open-source third-party attributions
+├── ACKNOWLEDGMENTS.md       # Credits: libraries, science refs, community
 └── docs/                    # Complete Engineering & User Documentation
     ├── PRD.md               # Product Requirements Document
     ├── SRS.md               # Software Requirements Specification
@@ -129,13 +134,18 @@ DEADRYX/
     ├── DEPLOYMENT.md        # Netlify & Cloudflare deployment guide
     ├── RELEASE_CHECKLIST.md # Production release checklist
     ├── BACKUP_DR.md         # Cloud sync & disaster recovery runbook
+    ├── GLOSSARY.md          # Fitness & app-specific term definitions
+    ├── SUPPORT.md           # Bug reports, feature requests & contact
     ├── adr/                 # Architecture Decision Records
     │   ├── 0001-vanilla-stack-offline-first.md
     │   ├── 0002-indexeddb-media-storage.md
-    │   └── 0003-google-drive-appdata-sync.md
+    │   ├── 0003-google-drive-appdata-sync.md
+    │   └── 0004-pwa-service-worker-caching.md
     ├── user/                # Athlete & gym-goer user guides
     │   ├── GETTING_STARTED.md
-    │   └── FAQ.md
+    │   ├── FAQ.md
+    │   ├── FEATURES.md      # Complete feature reference
+    │   └── TROUBLESHOOTING.md # Common issues & step-by-step fixes
     └── legal/               # Legal statements
         ├── PRIVACY_POLICY.md
         ├── TERMS.md
@@ -154,7 +164,11 @@ For comprehensive documentation, refer to the guides in [`docs/`](docs/):
 - **[UI/UX Design Spec](docs/DESIGN.md)**
 - **[Developer Setup Guide](docs/SETUP.md)**
 - **[Athlete Getting Started Guide](docs/user/GETTING_STARTED.md)**
+- **[Feature Reference](docs/user/FEATURES.md)**
 - **[Frequently Asked Questions](docs/user/FAQ.md)**
+- **[Troubleshooting Guide](docs/user/TROUBLESHOOTING.md)**
+- **[Glossary](docs/GLOSSARY.md)**
+- **[Support & Bug Reports](docs/SUPPORT.md)**
 
 ---
 
@@ -168,5 +182,5 @@ This project is licensed under the **MIT License** — see the [LICENSE](LICENSE
 
 Crafted with dedication by **Bharat Ji Dubey**:
 - **Email**: [bharatjid021@gmail.com](mailto:bharatjid021@gmail.com)
-- **Live App**: [deadryx.netlify.app](https://deadryx.netlify.app)
+- **Live App**: [deadryx.me](https://deadryx.me)
 - **Support**: [Buy Me a Coffee](https://buymeacoffee.com/bharatjidubey)
