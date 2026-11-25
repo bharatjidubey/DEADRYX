@@ -36,6 +36,82 @@ function triggerSync() {
 // Apply theme as early as possible to avoid flash
 applyTheme(loadTheme());
 
+// ================== SHARED HTML ESCAPE & ZOOM-SAFE TOOLTIP ==================
+function escapeHtml(str) {
+  if (str === null || str === undefined) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+window.escapeHtml = escapeHtml;
+
+let _tooltipZoomCache = null;
+window.addEventListener("resize", () => { _tooltipZoomCache = null; }, { passive: true });
+
+function getFixedZoomMetrics(tooltipEl) {
+  const vw = document.documentElement.clientWidth || window.innerWidth;
+  if (_tooltipZoomCache && _tooltipZoomCache.vw === vw) {
+    return _tooltipZoomCache;
+  }
+
+  const prevLeft = tooltipEl.style.left;
+  const prevTop = tooltipEl.style.top;
+
+  tooltipEl.style.left = "0px";
+  tooltipEl.style.top = "0px";
+  const r0 = tooltipEl.getBoundingClientRect();
+
+  tooltipEl.style.left = "100px";
+  tooltipEl.style.top = "100px";
+  const r100 = tooltipEl.getBoundingClientRect();
+
+  tooltipEl.style.left = prevLeft;
+  tooltipEl.style.top = prevTop;
+
+  _tooltipZoomCache = {
+    vw,
+    originLeft: r0.left,
+    originTop: r0.top,
+    scaleX: (r100.left - r0.left) / 100 || 1,
+    scaleY: (r100.top - r0.top) / 100 || 1
+  };
+  return _tooltipZoomCache;
+}
+
+/**
+ * Position a fixed-position tooltip near a viewport anchor coordinate (clientX, clientY),
+ * calibrating once per viewport size so root CSS zoom (e.g. html { zoom: 0.75 })
+ * never shifts the rendered box or triggers redundant reflows during hover.
+ */
+function positionFloatingTooltip(tooltipEl, anchorClientX, anchorClientY, gap = 14) {
+  if (!tooltipEl) return;
+
+  tooltipEl.classList.add("visible");
+  const { originLeft, originTop, scaleX, scaleY } = getFixedZoomMetrics(tooltipEl);
+  const rect = tooltipEl.getBoundingClientRect();
+
+  const ttW = rect.width || (tooltipEl.offsetWidth * scaleX) || 140;
+  const ttH = rect.height || (tooltipEl.offsetHeight * scaleY) || 56;
+
+  const vw = document.documentElement.clientWidth || window.innerWidth;
+  const vh = document.documentElement.clientHeight || window.innerHeight;
+
+  let targetLeft = anchorClientX - (ttW / 2);
+  let targetTop = anchorClientY - ttH - gap;
+
+  if (targetLeft < 8) targetLeft = 8;
+  if (targetLeft + ttW > vw - 8) targetLeft = Math.max(8, vw - ttW - 8);
+  if (targetTop < 8) targetTop = anchorClientY + gap + 6;
+  if (targetTop + ttH > vh - 8) targetTop = Math.max(8, vh - ttH - 8);
+
+  tooltipEl.style.left = ((targetLeft - originLeft) / scaleX) + "px";
+  tooltipEl.style.top = ((targetTop - originTop) / scaleY) + "px";
+}
+window.positionFloatingTooltip = positionFloatingTooltip;
+
 // ================== DATA EXPORT / IMPORT ==================
 const BACKUP_KEYS = [
   "deadryx-workout-history-v1",

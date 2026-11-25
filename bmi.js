@@ -409,20 +409,31 @@ function renderNutritionBlock(weightKg) {
 }
 
 // ============ CHART ============
+function formatBMIChartDate(dateStr) {
+  if (!dateStr) return "";
+  try {
+    const parts = dateStr.split("-");
+    if (parts.length === 3) {
+      const dt = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+      return dt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    }
+  } catch (e) {}
+  return dateStr;
+}
+
 function drawBMIChart(history) {
   const canvas = document.getElementById("bmiMiniChart");
   if (!canvas) return;
   const ctx = canvas.getContext("2d");
   const W = canvas.width;
   const H = canvas.height;
-  ctx.clearRect(0, 0, W, H);
 
-  const pad = { t: 8, r: 8, b: 18, l: 8 };
+  const pad = { t: 12, r: 12, b: 20, l: 12 };
   const plotW = W - pad.l - pad.r;
   const plotH = H - pad.t - pad.b;
 
   const points = history.slice(-12);
-  if (points.length < 2) return;
+  if (points.length < 1) return;
 
   const bmis = points.map(p => p.bmi);
   const weights = points.map(p => p.weightKg);
@@ -431,53 +442,285 @@ function drawBMIChart(history) {
   const wMin = Math.min(...weights) - 2;
   const wMax = Math.max(...weights) + 2;
 
-  ctx.strokeStyle = "rgba(150,150,150,0.15)";
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(pad.l, pad.t + plotH);
-  ctx.lineTo(pad.l + plotW, pad.t + plotH);
-  ctx.stroke();
+  const xStep = points.length > 1 ? plotW / (points.length - 1) : 0;
 
-  const xStep = plotW / (points.length - 1);
-
-  // Weight line (blue)
-  ctx.strokeStyle = "#4da3ff";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  points.forEach((p, i) => {
-    const x = pad.l + i * xStep;
-    const y = pad.t + plotH - ((p.weightKg - wMin) / (wMax - wMin)) * plotH;
-    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  const dots = points.map((p, i) => {
+    const x = points.length === 1 ? pad.l + plotW / 2 : pad.l + i * xStep;
+    const yW = (wMax === wMin) ? pad.t + plotH / 2 : pad.t + plotH - ((p.weightKg - wMin) / (wMax - wMin)) * plotH;
+    const yB = (bmiMax === bmiMin) ? pad.t + plotH / 2 : pad.t + plotH - ((p.bmi - bmiMin) / (bmiMax - bmiMin)) * plotH;
+    return {
+      x,
+      yWeight: yW,
+      yBMI: yB,
+      weightKg: p.weightKg,
+      bmi: p.bmi,
+      date: p.date
+    };
   });
-  ctx.stroke();
 
-  // BMI line (green)
-  ctx.strokeStyle = "#36e28a";
-  ctx.lineWidth = 2.5;
-  ctx.beginPath();
-  points.forEach((p, i) => {
-    const x = pad.l + i * xStep;
-    const y = pad.t + plotH - ((p.bmi - bmiMin) / (bmiMax - bmiMin)) * plotH;
-    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-  });
-  ctx.stroke();
+  // Tooltip element setup
+  let tooltipEl = document.getElementById("bmiChartTooltip");
+  if (!tooltipEl) {
+    tooltipEl = document.createElement("div");
+    tooltipEl.id = "bmiChartTooltip";
+    tooltipEl.className = "graph-floating-tooltip";
+    document.body.appendChild(tooltipEl);
+  }
 
-  // Dots for BMI
-  points.forEach((p, i) => {
-    const x = pad.l + i * xStep;
-    const y = pad.t + plotH - ((p.bmi - bmiMin) / (bmiMax - bmiMin)) * plotH;
-    ctx.fillStyle = "#36e28a";
+  let activeHoveredIdx = null;
+  let cachedPadding = null;
+
+  function getContentBox() {
+    const rect = canvas.getBoundingClientRect();
+    if (!cachedPadding) {
+      const cs = window.getComputedStyle(canvas);
+      cachedPadding = {
+        padL: (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.borderLeftWidth) || 0),
+        padR: (parseFloat(cs.paddingRight) || 0) + (parseFloat(cs.borderRightWidth) || 0),
+        padT: (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.borderTopWidth) || 0),
+        padB: (parseFloat(cs.paddingBottom) || 0) + (parseFloat(cs.borderBottomWidth) || 0)
+      };
+    }
+    const cssFullW = canvas.offsetWidth || rect.width;
+    const cssFullH = canvas.offsetHeight || rect.height;
+    const zoomRatioX = cssFullW > 0 ? rect.width / cssFullW : 1;
+    const zoomRatioY = cssFullH > 0 ? rect.height / cssFullH : 1;
+    const leftOffset = cachedPadding.padL * zoomRatioX;
+    const rightOffset = cachedPadding.padR * zoomRatioX;
+    const topOffset = cachedPadding.padT * zoomRatioY;
+    const bottomOffset = cachedPadding.padB * zoomRatioY;
+    return {
+      left: rect.left + leftOffset,
+      top: rect.top + topOffset,
+      width: Math.max(1, rect.width - leftOffset - rightOffset),
+      height: Math.max(1, rect.height - topOffset - bottomOffset)
+    };
+  }
+
+  function showTooltip(dot, clientX, clientY) {
+    const formattedDate = formatBMIChartDate(dot.date);
+    tooltipEl.innerHTML = `
+      <div class="tt-grid">
+        <div class="tt-label">Date</div>
+        <div class="tt-value">${formattedDate}</div>
+        <div class="tt-label">Weight</div>
+        <div class="tt-value accent">${dot.weightKg} kg</div>
+        <div class="tt-label">BMI</div>
+        <div class="tt-value">${dot.bmi}</div>
+      </div>
+    `;
+
+    if (typeof window.positionFloatingTooltip === "function") {
+      window.positionFloatingTooltip(tooltipEl, clientX, clientY, 14);
+    } else {
+      const ttWidth = tooltipEl.offsetWidth || 150;
+      const ttHeight = tooltipEl.offsetHeight || 75;
+      let left = clientX - (ttWidth / 2);
+      let top = clientY - ttHeight - 14;
+      if (left < 10) left = 10;
+      if (left + ttWidth > window.innerWidth - 10) left = window.innerWidth - ttWidth - 10;
+      if (top < 10) top = clientY + 16;
+      tooltipEl.style.left = left + "px";
+      tooltipEl.style.top = top + "px";
+      tooltipEl.classList.add("visible");
+    }
+  }
+
+  function hideTooltip() {
+    if (tooltipEl) tooltipEl.classList.remove("visible");
+  }
+
+  function render(hoveredIdx) {
+    const isLight = document.documentElement.getAttribute("data-theme") === "light";
+    ctx.clearRect(0, 0, W, H);
+
+    // Baseline
+    ctx.strokeStyle = isLight ? "rgba(15, 23, 42, 0.12)" : "rgba(150,150,150,0.15)";
+    ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.arc(x, y, 3, 0, Math.PI * 2);
-    ctx.fill();
-  });
+    ctx.moveTo(pad.l, pad.t + plotH);
+    ctx.lineTo(pad.l + plotW, pad.t + plotH);
+    ctx.stroke();
 
-  // X labels
-  ctx.fillStyle = "rgba(150,150,150,0.7)";
-  ctx.font = "10px Inter, sans-serif";
-  ctx.fillText(points[0].date.slice(5), pad.l, H - 4);
-  const lastLabel = points[points.length - 1].date.slice(5);
-  ctx.fillText(lastLabel, W - pad.r - ctx.measureText(lastLabel).width, H - 4);
+    if (points.length > 1) {
+      // Weight line (blue)
+      ctx.strokeStyle = "#4da3ff";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      dots.forEach((d, i) => {
+        i === 0 ? ctx.moveTo(d.x, d.yWeight) : ctx.lineTo(d.x, d.yWeight);
+      });
+      ctx.stroke();
+
+      // BMI line (green)
+      ctx.strokeStyle = "#36e28a";
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      dots.forEach((d, i) => {
+        i === 0 ? ctx.moveTo(d.x, d.yBMI) : ctx.lineTo(d.x, d.yBMI);
+      });
+      ctx.stroke();
+    }
+
+    // Vertical guide line for hovered dot
+    if (hoveredIdx !== null && dots[hoveredIdx]) {
+      const hDot = dots[hoveredIdx];
+      ctx.save();
+      ctx.beginPath();
+      ctx.setLineDash([3, 3]);
+      ctx.strokeStyle = isLight ? "rgba(15, 23, 42, 0.25)" : "rgba(255, 255, 255, 0.35)";
+      ctx.lineWidth = 1;
+      ctx.moveTo(hDot.x, pad.t);
+      ctx.lineTo(hDot.x, pad.t + plotH);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Dots for Weight (blue)
+    dots.forEach((d) => {
+      ctx.fillStyle = "#4da3ff";
+      ctx.beginPath();
+      ctx.arc(d.x, d.yWeight, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    // Dots for BMI (green)
+    dots.forEach((d) => {
+      ctx.fillStyle = "#36e28a";
+      ctx.beginPath();
+      ctx.arc(d.x, d.yBMI, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    // Concentric hover target ring on the active dot (matching user reference)
+    if (hoveredIdx !== null && dots[hoveredIdx]) {
+      const hDot = dots[hoveredIdx];
+      const gapColor = isLight ? "#f0f3f8" : "#141b25";
+      const ringColorW = isLight ? "#2563eb" : "#ffffff";
+      const ringColorB = isLight ? "#059669" : "#ffffff";
+
+      // Highlight Weight dot with gap + outer concentric ring
+      ctx.save();
+      ctx.fillStyle = gapColor;
+      ctx.beginPath();
+      ctx.arc(hDot.x, hDot.yWeight, 7.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = ringColorW;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(hDot.x, hDot.yWeight, 7.5, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = "#4da3ff";
+      ctx.beginPath();
+      ctx.arc(hDot.x, hDot.yWeight, 3.8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      // Highlight BMI dot with gap + outer concentric ring
+      ctx.save();
+      ctx.fillStyle = gapColor;
+      ctx.beginPath();
+      ctx.arc(hDot.x, hDot.yBMI, 7.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = ringColorB;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(hDot.x, hDot.yBMI, 7.5, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = "#36e28a";
+      ctx.beginPath();
+      ctx.arc(hDot.x, hDot.yBMI, 3.8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // X labels
+    ctx.fillStyle = isLight ? "rgba(15, 23, 42, 0.55)" : "rgba(150,150,150,0.7)";
+    ctx.font = "10px Inter, sans-serif";
+    ctx.fillText(points[0].date.slice(5), pad.l, H - 4);
+    if (points.length > 1) {
+      const lastLabel = points[points.length - 1].date.slice(5);
+      ctx.fillText(lastLabel, W - pad.r - ctx.measureText(lastLabel).width, H - 4);
+    }
+  }
+
+  // Initial draw
+  render(null);
+
+  // Mouse / Touch Interaction Handlers (screen-pixel projection so CSS zoom/padding never desyncs)
+  function getNearestDotMatch(clientX, clientY, radiusPx = 26) {
+    const box = getContentBox();
+    let nearestIdx = null;
+    let minDist = radiusPx;
+
+    dots.forEach((dot, idx) => {
+      const screenX = box.left + (dot.x / W) * box.width;
+      const screenYW = box.top + (dot.yWeight / H) * box.height;
+      const screenYB = box.top + (dot.yBMI / H) * box.height;
+      const distW = Math.hypot(screenX - clientX, screenYW - clientY);
+      const distB = Math.hypot(screenX - clientX, screenYB - clientY);
+      const dist = Math.min(distW, distB);
+      if (dist <= minDist) {
+        minDist = dist;
+        nearestIdx = idx;
+      }
+    });
+
+    if (nearestIdx === null) return null;
+    const dot = dots[nearestIdx];
+    return {
+      idx: nearestIdx,
+      dot,
+      anchorX: box.left + (dot.x / W) * box.width,
+      anchorY: box.top + (Math.min(dot.yWeight, dot.yBMI) / H) * box.height
+    };
+  }
+
+  function setHoverState(match) {
+    const nextIdx = match ? match.idx : null;
+    if (nextIdx !== activeHoveredIdx) {
+      activeHoveredIdx = nextIdx;
+      canvas.style.cursor = match ? "pointer" : "default";
+      render(nextIdx);
+      if (match) {
+        showTooltip(match.dot, match.anchorX, match.anchorY);
+      } else {
+        hideTooltip();
+      }
+    }
+  }
+
+  canvas.onmousemove = (e) => {
+    setHoverState(getNearestDotMatch(e.clientX, e.clientY, 26));
+  };
+
+  canvas.onmouseleave = () => {
+    setHoverState(null);
+  };
+
+  const handleTouch = (touch) => {
+    const match = getNearestDotMatch(touch.clientX, touch.clientY, 36);
+    if (match) setHoverState(match);
+  };
+
+  canvas.ontouchstart = (e) => {
+    if (e.touches && e.touches.length > 0) {
+      handleTouch(e.touches[0]);
+    }
+  };
+
+  canvas.ontouchmove = (e) => {
+    if (e.touches && e.touches.length > 0) {
+      handleTouch(e.touches[0]);
+    }
+  };
+
+  canvas.ontouchend = () => {
+    setTimeout(() => {
+      render(null);
+      hideTooltip();
+    }, 2500);
+  };
 }
 
 // ============ HANDLERS ============

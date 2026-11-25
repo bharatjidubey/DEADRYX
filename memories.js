@@ -205,11 +205,6 @@ const getOrCreateLightbox = () => {
         closeLightbox();
       }
     });
-
-    // Close on Escape key
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') closeLightbox();
-    });
   }
   return lb;
 };
@@ -258,10 +253,12 @@ const closeLightbox = () => {
   const vid = lb.querySelector('video');
   if (vid) vid.pause();
 
-  // Remove media after transition
+  // Remove media after transition (only if lightbox wasn't reopened)
   setTimeout(() => {
-    const media = lb.querySelector('img, video');
-    if (media) media.remove();
+    if (!lb.classList.contains('active')) {
+      const media = lb.querySelector('img, video');
+      if (media) media.remove();
+    }
   }, 350);
 };
 
@@ -287,6 +284,7 @@ const renderTimeline = async () => {
       return;
     }
 
+    const fragment = document.createDocumentFragment();
     items.forEach((item, index) => {
       const card = document.createElement('div');
       card.className = 'media-card';
@@ -295,17 +293,18 @@ const renderTimeline = async () => {
       const fileUrl = URL.createObjectURL(item.file);
       activeObjectUrls.push(fileUrl);
 
-      let mediaNode = '';
-      if (item.type === 'video') {
-        mediaNode = `<video src="${fileUrl}" controls preload="metadata"></video>`;
-      } else {
-        mediaNode = `<img src="${fileUrl}" alt="Workout Memory" loading="lazy">`;
-      }
+      const safeDateStr = (typeof window.escapeHtml === 'function')
+        ? window.escapeHtml(item.dateStr || '')
+        : String(item.dateStr || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+      const mediaNode = item.type === 'video'
+        ? `<video src="${fileUrl}" controls preload="metadata"></video>`
+        : `<img src="${fileUrl}" alt="Workout Memory" loading="lazy">`;
 
       card.innerHTML = `
         ${mediaNode}
         <button type="button" class="media-delete-btn" title="Delete memory" data-id="${item.id}" aria-label="Delete memory">&times;</button>
-        <div class="media-timestamp">${item.dateStr}</div>
+        <div class="media-timestamp">${safeDateStr}</div>
       `;
 
       // Open lightbox on click (for images, click anywhere; for videos, only on timestamp)
@@ -338,8 +337,9 @@ const renderTimeline = async () => {
         });
       }
 
-      container.appendChild(card);
+      fragment.appendChild(card);
     });
+    container.appendChild(fragment);
   } catch (error) {
     console.error("Failed to load media", error);
   }

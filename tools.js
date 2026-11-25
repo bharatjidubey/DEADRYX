@@ -10,6 +10,7 @@ const DeadryxTimer = (() => {
   let isPaused = false;
   let audioCtx = null;
   let timerEl = null;
+  let lastPlayBtnRunning = null;
 
   const PRESETS = [30, 60, 90, 120, 180];
   const TIMER_PREFS_KEY = 'deadryx-timer-prefs-v1';
@@ -122,10 +123,12 @@ const DeadryxTimer = (() => {
       }
     }
 
-    // Update button states
+    // Update play/pause button icon only when active running state changes
     const playBtn = timerEl.querySelector('.timer-play-btn');
-    if (playBtn) {
-      playBtn.innerHTML = isRunning && !isPaused
+    const isActivelyRunning = Boolean(isRunning && !isPaused);
+    if (playBtn && lastPlayBtnRunning !== isActivelyRunning) {
+      lastPlayBtnRunning = isActivelyRunning;
+      playBtn.innerHTML = isActivelyRunning
         ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>'
         : '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
     }

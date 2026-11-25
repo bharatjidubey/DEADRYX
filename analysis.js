@@ -18,47 +18,27 @@ let currentViewMode = "thisYear";
 let currentLabels = [];
 let currentFullDates = [];
 let currentDataPoints = [];
+let currentActiveIndices = [];
+let hoveredDotIndex = null;
 
 const params = new URLSearchParams(window.location.search);
 let exerciseName = params.get("exercise") || "";
 
-// Custom exact-dot interaction mode with 2D distance threshold (ignores skipped/null days)
-if (typeof Chart !== "undefined") {
-  const modes = (Chart.Interaction && Chart.Interaction.modes) || {};
-  modes.exactDot = function(chart, e, options, useFinalPosition) {
-    const meta = chart.getDatasetMeta(0);
-    if (!meta || !meta.data || !meta.data.length) return [];
+function safeEscape(str) {
+  return (typeof window.escapeHtml === "function")
+    ? window.escapeHtml(str)
+    : String(str ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
 
-    let posX = (typeof e.x === "number") ? e.x : (e.native && typeof e.native.offsetX === "number" ? e.native.offsetX : 0);
-    let posY = (typeof e.y === "number") ? e.y : (e.native && typeof e.native.offsetY === "number" ? e.native.offsetY : 0);
-    if (Chart.helpers && typeof Chart.helpers.getRelativePosition === "function") {
-      try {
-        const rel = Chart.helpers.getRelativePosition(e, chart);
-        if (rel && typeof rel.x === "number") {
-          posX = rel.x;
-          posY = rel.y;
-        }
-      } catch (err) {}
-    }
-
-    const maxDistance = 35; // 35px Euclidean radius threshold
-    let nearest = null;
-    let minDistance = maxDistance;
-
-    for (let i = 0; i < meta.data.length; i++) {
-      const pt = meta.data[i];
-      if (!pt || pt.skip || typeof pt.x !== "number" || typeof pt.y !== "number" || isNaN(pt.x) || isNaN(pt.y)) {
-        continue;
-      }
-      const dist = Math.hypot(pt.x - posX, pt.y - posY);
-      if (dist <= minDistance) {
-        minDistance = dist;
-        nearest = { element: pt, index: i, datasetIndex: 0 };
-      }
-    }
-
-    return nearest ? [nearest] : [];
-  };
+function getOrCreateChartTooltip() {
+  let ttEl = document.getElementById("chartjs-tooltip");
+  if (!ttEl) {
+    ttEl = document.createElement("div");
+    ttEl.id = "chartjs-tooltip";
+    ttEl.className = "graph-floating-tooltip";
+    document.body.appendChild(ttEl);
+  }
+  return ttEl;
 }
 
 function getAllAvailableExercises() {
@@ -257,15 +237,17 @@ function processHistoricalData() {
 
   dates.forEach(date => {
     const dayData = rawData[date];
-    if (!dayData) return;
+    if (!dayData || typeof dayData !== "object") return;
     const matchKey = Object.keys(dayData).find(k => k.trim().toLowerCase() === cleanTarget);
-    if (matchKey && dayData[matchKey]) {
+    if (matchKey && dayData[matchKey] && typeof dayData[matchKey] === "object") {
       const sets = dayData[matchKey];
       let maxWeight = 0;
 
       Object.keys(sets).forEach(setKey => {
-        const weight = parseFloat(sets[setKey].weight || "0");
-        if (weight > maxWeight) {
+        const entry = sets[setKey];
+        if (!entry || typeof entry !== "object") return;
+        const weight = parseFloat(entry.weight || "0");
+        if (Number.isFinite(weight) && weight > maxWeight) {
           maxWeight = weight;
         }
       });
@@ -279,8 +261,30 @@ function processHistoricalData() {
   return processed;
 }
 
+function resetChartHoverState() {
+  const hadHover = hoveredDotIndex !== null;
+  hoveredDotIndex = null;
+  if (progressChartCanvas) {
+    progressChartCanvas.style.cursor = "default";
+  }
+  const hintEl = document.getElementById("inspectHint");
+  const dataEl = document.getElementById("inspectData");
+  if (hintEl && dataEl) {
+    hintEl.style.display = "inline-flex";
+    dataEl.style.display = "none";
+  }
+  const ttEl = document.getElementById("chartjs-tooltip");
+  if (ttEl) ttEl.classList.remove("visible");
+  if (hadHover && chartInstance) {
+    chartInstance.draw();
+  }
+}
+
 function renderChart(viewMode = "thisYear") {
   currentViewMode = viewMode;
+  hoveredDotIndex = null;
+  const existingTooltip = document.getElementById("chartjs-tooltip");
+  if (existingTooltip) existingTooltip.classList.remove("visible");
 
   if (!historicalData.length) {
     if (progressChartCanvas) progressChartCanvas.style.display = "none";
@@ -299,12 +303,12 @@ function renderChart(viewMode = "thisYear") {
 
   if (viewMode === "thisYear") {
     const currentYear = new Date().getFullYear();
-    const startOfYear = new Date(`${currentYear}-01-01T00:00:00`);
-    const endOfYear = new Date(`${currentYear}-12-31T23:59:59`);
-
     filteredData = historicalData.filter(item => {
-      const itemDate = new Date(item.date);
-      return itemDate >= startOfYear && itemDate <= endOfYear;
+      if (!item || !item.date) return false;
+      const yr = /^\d{4}/.test(item.date)
+        ? parseInt(item.date.slice(0, 4), 10)
+        : new Date(item.date).getFullYear();
+      return yr === currentYear;
     });
   }
 
@@ -371,6 +375,12 @@ function renderChart(viewMode = "thisYear") {
   currentLabels = labels;
   currentFullDates = fullDates;
   currentDataPoints = dataPoints;
+  currentActiveIndices = [];
+  for (let i = 0; i < dataPoints.length; i++) {
+    if (dataPoints[i] !== null && dataPoints[i] !== undefined) {
+      currentActiveIndices.push(i);
+    }
+  }
 
   // Reset live inspect badge to idle hint
   const hintEl = document.getElementById("inspectHint");
@@ -386,10 +396,14 @@ function renderChart(viewMode = "thisYear") {
 
   let latestThirdSetWeight = null;
   const rawData = loadHistoricalLog();
-  const sortedDates = Object.keys(rawData).sort((a, b) => new Date(b) - new Date(a));
+  const cleanTarget = (exerciseName || "").trim().toLowerCase();
+  const sortedDates = Object.keys(rawData).sort().reverse();
   for (let d of sortedDates) {
-    if (rawData[d] && rawData[d][exerciseName]) {
-      const sets = rawData[d][exerciseName];
+    const dayObj = rawData[d];
+    if (!dayObj || typeof dayObj !== "object") continue;
+    const matchKey = Object.keys(dayObj).find(k => k.trim().toLowerCase() === cleanTarget);
+    if (matchKey && dayObj[matchKey]) {
+      const sets = dayObj[matchKey];
       if (sets && sets["3"] && sets["3"].weight) {
         latestThirdSetWeight = parseFloat(sets["3"].weight);
         if (latestThirdSetWeight > 0) break;
@@ -401,12 +415,29 @@ function renderChart(viewMode = "thisYear") {
   const t = targets[exerciseName] ? targets[exerciseName][currentViewMode] : null;
   const currentTargetWeight = (t && t.weight) ? parseFloat(t.weight) : null;
 
+  // Include logged data weights alongside target/reference lines so a lower target never clips dots
+  const validWeights = dataPoints.filter(v => typeof v === "number" && Number.isFinite(v) && v > 0);
+  const boundCandidates = [...validWeights];
+  if (currentTargetWeight !== null && Number.isFinite(currentTargetWeight) && currentTargetWeight > 0) {
+    boundCandidates.push(currentTargetWeight);
+  }
+  if (latestThirdSetWeight !== null && Number.isFinite(latestThirdSetWeight) && latestThirdSetWeight > 0) {
+    boundCandidates.push(latestThirdSetWeight);
+  }
+  const highestRef = boundCandidates.length ? Math.max(...boundCandidates) : 0;
+  const lowestRef = boundCandidates.length ? Math.min(...boundCandidates) : 0;
+  const yAxisMax = highestRef > 0 ? Math.ceil(Math.max(highestRef * 1.12, highestRef + 2)) : undefined;
+  const yAxisMin = lowestRef > 0 ? Math.max(0, Math.floor(Math.min(lowestRef * 0.88, lowestRef - 2))) : 0;
+
+  const isLightTheme = document.documentElement.getAttribute("data-theme") === "light";
+
   const customStickersPlugin = {
     id: 'customStickers',
     afterDraw: (chart) => {
       const ctx = chart.ctx;
       const xAxis = chart.scales.x;
       const yAxis = chart.scales.y;
+      const isLight = document.documentElement.getAttribute("data-theme") === "light";
 
       if (currentTargetWeight !== null && currentTargetWeight > 0) {
         const yPixel = yAxis.getPixelForValue(currentTargetWeight);
@@ -445,6 +476,48 @@ function renderChart(viewMode = "thisYear") {
           ctx.restore();
         }
       }
+
+      // Draw concentric target ring & subtle guide line on hovered dot
+      if (hoveredDotIndex !== null) {
+        const meta = chart.getDatasetMeta(0);
+        const pt = meta && meta.data ? meta.data[hoveredDotIndex] : null;
+        if (pt && !pt.skip && Number.isFinite(pt.x) && Number.isFinite(pt.y)) {
+          ctx.save();
+
+          // Subtle vertical guide line
+          ctx.beginPath();
+          ctx.setLineDash([4, 4]);
+          ctx.strokeStyle = isLight ? "rgba(15, 23, 42, 0.2)" : "rgba(255, 255, 255, 0.25)";
+          ctx.lineWidth = 1;
+          ctx.moveTo(pt.x, yAxis.top);
+          ctx.lineTo(pt.x, yAxis.bottom);
+          ctx.stroke();
+
+          // Outer concentric ring with crisp gap around inner dot
+          ctx.setLineDash([]);
+          const bgFill = isLight ? "#f0f3f8" : "#0b0f16";
+          const outerRingColor = isLight ? "#059669" : "#ffffff";
+          const innerDotColor = isLight ? "#059669" : "#36e28a";
+
+          ctx.fillStyle = bgFill;
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, 10, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.strokeStyle = outerRingColor;
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, 10, 0, Math.PI * 2);
+          ctx.stroke();
+
+          ctx.fillStyle = innerDotColor;
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, 5.5, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.restore();
+        }
+      }
     }
   };
 
@@ -464,15 +537,10 @@ function renderChart(viewMode = "thisYear") {
         borderColor: "#36e28a",
         backgroundColor: gradient,
         borderWidth: 3,
-        pointBackgroundColor: "#0b0f16",
-        pointBorderColor: "#36e28a",
-        pointBorderWidth: 2,
+        pointBackgroundColor: isLightTheme ? "#ffffff" : "#0b0f16",
+        pointBorderColor: isLightTheme ? "#059669" : "#36e28a",
+        pointBorderWidth: 2.5,
         pointRadius: 6,
-        pointHoverRadius: 10,
-        pointHitRadius: 35,
-        pointHoverBackgroundColor: "#36e28a",
-        pointHoverBorderColor: "#ffffff",
-        pointHoverBorderWidth: 2.5,
         fill: true,
         spanGaps: true,
         tension: 0.3
@@ -482,166 +550,237 @@ function renderChart(viewMode = "thisYear") {
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      interaction: {
-        mode: 'exactDot',
-        intersect: false
-      },
-      onHover: function(event, activeElements) {
-        const hintEl = document.getElementById("inspectHint");
-        const dataEl = document.getElementById("inspectData");
-        const dateEl = document.getElementById("inspectDate");
-        const weightEl = document.getElementById("inspectWeight");
-
-        if (activeElements && activeElements.length > 0) {
-          const idx = activeElements[0].index;
-          const val = dataPoints[idx];
-          if (val !== null && val !== undefined) {
-            if (hintEl) hintEl.style.display = "none";
-            if (dataEl) dataEl.style.display = "inline-flex";
-            if (dateEl) dateEl.textContent = "📅 " + (fullDates[idx] || labels[idx]);
-            if (weightEl) weightEl.textContent = "🏋️ Max: " + val + " kg";
-            return;
-          }
-        }
-        if (hintEl) hintEl.style.display = "inline-flex";
-        if (dataEl) dataEl.style.display = "none";
-      },
-      onClick: function(event, activeElements) {
-        const hintEl = document.getElementById("inspectHint");
-        const dataEl = document.getElementById("inspectData");
-        const dateEl = document.getElementById("inspectDate");
-        const weightEl = document.getElementById("inspectWeight");
-
-        if (activeElements && activeElements.length > 0) {
-          const idx = activeElements[0].index;
-          const val = dataPoints[idx];
-          if (val !== null && val !== undefined) {
-            if (hintEl) hintEl.style.display = "none";
-            if (dataEl) dataEl.style.display = "inline-flex";
-            if (dateEl) dateEl.textContent = "📅 " + (fullDates[idx] || labels[idx]);
-            if (weightEl) weightEl.textContent = "🏋️ Max: " + val + " kg";
-          }
-        }
-      },
+      events: [], // Handled via zoom-safe direct screen-space listeners
       plugins: {
         legend: { display: false },
         tooltip: {
-          enabled: true,
-          mode: 'exactDot',
-          intersect: false,
-          backgroundColor: "#141b25",
-          titleColor: "#f4f7fb",
-          bodyColor: "#36e28a",
-          borderColor: "rgba(255, 255, 255, 0.14)",
-          borderWidth: 1,
-          padding: 10,
-          displayColors: false,
-          cornerRadius: 8,
-          filter: function(tooltipItem) {
-            return tooltipItem.raw !== null && tooltipItem.raw !== undefined;
-          },
-          callbacks: {
-            title: function(items) {
-              if (!items || !items.length) return "";
-              const idx = items[0].dataIndex !== undefined ? items[0].dataIndex : items[0].index;
-              return fullDates[idx] || labels[idx] || "";
-            },
-            label: function(item) {
-              return `Max Weight: ${item.raw} kg`;
-            }
-          }
+          enabled: false
         }
       },
       scales: {
         x: {
           grid: {
-            color: "rgba(255,255,255,0.03)",
-            borderColor: "rgba(255,255,255,0.03)"
+            color: isLightTheme ? "rgba(15, 23, 42, 0.05)" : "rgba(255,255,255,0.03)",
+            borderColor: isLightTheme ? "rgba(15, 23, 42, 0.08)" : "rgba(255,255,255,0.03)"
           },
           ticks: {
-            color: "#97a3b6",
+            color: isLightTheme ? "#64748b" : "#97a3b6",
             maxTicksLimit: 12
           }
         },
         y: {
           grid: {
-            color: "rgba(255,255,255,0.03)",
-            borderColor: "rgba(255,255,255,0.03)"
+            color: isLightTheme ? "rgba(15, 23, 42, 0.05)" : "rgba(255,255,255,0.03)",
+            borderColor: isLightTheme ? "rgba(15, 23, 42, 0.08)" : "rgba(255,255,255,0.03)"
           },
-          ticks: { color: "#97a3b6" },
+          ticks: { color: isLightTheme ? "#64748b" : "#97a3b6" },
           beginAtZero: false,
-          max: currentTargetWeight ? Math.ceil(Math.max(currentTargetWeight * 1.1, (latestThirdSetWeight || 0) * 1.1)) : undefined,
-          suggestedMin: undefined
+          min: yAxisMin,
+          max: yAxisMax
         }
       }
     }
   });
 }
 
-initExerciseSelect();
-historicalData = processHistoricalData();
-renderChart("thisYear");
+function inspectChartAtClientPos(clientX, clientY, radiusPx = 30) {
+  if (!progressChartCanvas || !chartInstance) {
+    resetChartHoverState();
+    return;
+  }
 
-if (btnThisYear) {
-  btnThisYear.addEventListener("click", () => {
-    btnThisYear.classList.add("active");
-    if (btnLifetime) btnLifetime.classList.remove("active");
-    renderChart("thisYear");
-  });
-}
+  const rect = progressChartCanvas.getBoundingClientRect();
+  if (!rect || rect.width <= 0 || rect.height <= 0) {
+    resetChartHoverState();
+    return;
+  }
 
-if (btnLifetime) {
-  btnLifetime.addEventListener("click", () => {
-    btnLifetime.classList.add("active");
-    if (btnThisYear) btnThisYear.classList.remove("active");
-    renderChart("lifetime");
-  });
-}
+  const meta = chartInstance.getDatasetMeta(0);
+  if (!meta || !meta.data || !meta.data.length) {
+    resetChartHoverState();
+    return;
+  }
 
-if (saveTargetBtn) {
-  saveTargetBtn.addEventListener("click", () => {
-    const w = parseFloat(targetWeightInput.value);
-    const d = parseDeadline(targetDateInput.value);
-    if (!w) return;
+  const logicalW = chartInstance.width || progressChartCanvas.clientWidth || rect.width;
+  const logicalH = chartInstance.height || progressChartCanvas.clientHeight || rect.height;
 
-    const targets = loadTargets();
-    if (!targets[exerciseName]) targets[exerciseName] = {};
-    targets[exerciseName][currentViewMode] = { weight: w, deadline: d };
-    saveTargets(targets);
-    triggerSync();
+  let nearest = null;
+  let minDist = radiusPx;
+  let anchorX = 0;
+  let anchorY = 0;
 
-    renderTargetBlock();
-    renderChart(currentViewMode);
-  });
-}
+  for (let k = 0; k < currentActiveIndices.length; k++) {
+    const i = currentActiveIndices[k];
+    const pt = meta.data[i];
+    if (!pt || pt.skip || !Number.isFinite(pt.x) || !Number.isFinite(pt.y)) continue;
 
-// (Mobile Sidebar Drawer is now centrally handled in shared.js)
+    // Project dot's logical coordinate into viewport CSS pixels (immune to CSS zoom)
+    const screenPtX = rect.left + (pt.x / logicalW) * rect.width;
+    const screenPtY = rect.top + (pt.y / logicalH) * rect.height;
+    const dist = Math.hypot(screenPtX - clientX, screenPtY - clientY);
 
-// Calendar picker button
-const calendarBtn = document.getElementById("calendarPickerBtn");
-const hiddenPicker = document.getElementById("hiddenDatePicker");
-
-if (calendarBtn && hiddenPicker) {
-  calendarBtn.addEventListener("click", () => {
-    if (targetDateInput.disabled) return;
-    hiddenPicker.showPicker();
-  });
-
-  hiddenPicker.addEventListener("change", () => {
-    if (hiddenPicker.value) {
-      targetDateInput.value = formatDeadline(hiddenPicker.value);
+    if (dist <= minDist) {
+      minDist = dist;
+      nearest = i;
+      anchorX = screenPtX;
+      anchorY = screenPtY;
     }
-  });
+  }
+
+  if (nearest === null) {
+    resetChartHoverState();
+    return;
+  }
+
+  const ttEl = getOrCreateChartTooltip();
+  if (hoveredDotIndex === nearest && ttEl.classList.contains("visible")) {
+    return;
+  }
+
+  progressChartCanvas.style.cursor = "pointer";
+  if (hoveredDotIndex !== nearest) {
+    hoveredDotIndex = nearest;
+    chartInstance.draw();
+  }
+
+  const dateVal = currentFullDates[nearest] || currentLabels[nearest] || "";
+  const weightVal = currentDataPoints[nearest];
+
+  const hintEl = document.getElementById("inspectHint");
+  const dataEl = document.getElementById("inspectData");
+  const dateEl = document.getElementById("inspectDate");
+  const weightEl = document.getElementById("inspectWeight");
+
+  if (hintEl) hintEl.style.display = "none";
+  if (dataEl) dataEl.style.display = "inline-flex";
+  if (dateEl) dateEl.textContent = "📅 " + dateVal;
+  if (weightEl) weightEl.textContent = "🏋️ " + weightVal + " kg";
+
+  ttEl.innerHTML = `<div class="tt-grid">
+    <div class="tt-label">Date</div><div class="tt-value">${safeEscape(dateVal)}</div>
+    <div class="tt-label">Weight</div><div class="tt-value accent">${safeEscape(weightVal)} kg</div>
+  </div>`;
+
+  if (typeof window.positionFloatingTooltip === "function") {
+    window.positionFloatingTooltip(ttEl, anchorX, anchorY, 15);
+  } else {
+    const ttW = ttEl.offsetWidth || 140;
+    const ttH = ttEl.offsetHeight || 56;
+    let left = anchorX - ttW / 2;
+    let top = anchorY - ttH - 15;
+    if (left < 8) left = 8;
+    if (left + ttW > window.innerWidth - 8) left = window.innerWidth - ttW - 8;
+    if (top < 8) top = anchorY + 18;
+    ttEl.style.left = left + "px";
+    ttEl.style.top = top + "px";
+    ttEl.classList.add("visible");
+  }
 }
 
-// Reset inspect badge when mouse leaves canvas
-if (progressChartCanvas) {
+function attachChartInteraction() {
+  if (!progressChartCanvas) return;
+
+  let touchHideTimer = null;
+
+  progressChartCanvas.addEventListener("mousemove", (e) => {
+    inspectChartAtClientPos(e.clientX, e.clientY, 30);
+  });
+
+  progressChartCanvas.addEventListener("click", (e) => {
+    inspectChartAtClientPos(e.clientX, e.clientY, 34);
+  });
+
   progressChartCanvas.addEventListener("mouseleave", () => {
-    const hintEl = document.getElementById("inspectHint");
-    const dataEl = document.getElementById("inspectData");
-    if (hintEl && dataEl) {
-      hintEl.style.display = "inline-flex";
-      dataEl.style.display = "none";
-    }
+    resetChartHoverState();
   });
+
+  progressChartCanvas.addEventListener("touchstart", (e) => {
+    if (touchHideTimer) clearTimeout(touchHideTimer);
+    if (e.touches && e.touches.length > 0) {
+      inspectChartAtClientPos(e.touches[0].clientX, e.touches[0].clientY, 40);
+    }
+  }, { passive: true });
+
+  progressChartCanvas.addEventListener("touchmove", (e) => {
+    if (touchHideTimer) clearTimeout(touchHideTimer);
+    if (e.touches && e.touches.length > 0) {
+      inspectChartAtClientPos(e.touches[0].clientX, e.touches[0].clientY, 40);
+    }
+  }, { passive: true });
+
+  progressChartCanvas.addEventListener("touchend", () => {
+    touchHideTimer = setTimeout(resetChartHoverState, 2500);
+  });
+}
+
+function initAnalysisPage() {
+  initExerciseSelect();
+  historicalData = processHistoricalData();
+  renderChart("thisYear");
+  attachChartInteraction();
+
+  if (btnThisYear) {
+    btnThisYear.addEventListener("click", () => {
+      btnThisYear.classList.add("active");
+      if (btnLifetime) btnLifetime.classList.remove("active");
+      renderChart("thisYear");
+    });
+  }
+
+  if (btnLifetime) {
+    btnLifetime.addEventListener("click", () => {
+      btnLifetime.classList.add("active");
+      if (btnThisYear) btnThisYear.classList.remove("active");
+      renderChart("lifetime");
+    });
+  }
+
+  if (saveTargetBtn) {
+    saveTargetBtn.addEventListener("click", () => {
+      const w = parseFloat(targetWeightInput.value);
+      const d = parseDeadline(targetDateInput.value);
+      if (!w) return;
+
+      const targets = loadTargets();
+      if (!targets[exerciseName]) targets[exerciseName] = {};
+      targets[exerciseName][currentViewMode] = { weight: w, deadline: d };
+      saveTargets(targets);
+      triggerSync();
+
+      renderTargetBlock();
+      renderChart(currentViewMode);
+    });
+  }
+
+  // Re-render chart colors when theme toggles
+  document.querySelectorAll(".theme-toggle-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      setTimeout(() => {
+        if (historicalData.length) renderChart(currentViewMode);
+      }, 0);
+    });
+  });
+
+  // Calendar picker button
+  const calendarBtn = document.getElementById("calendarPickerBtn");
+  const hiddenPicker = document.getElementById("hiddenDatePicker");
+
+  if (calendarBtn && hiddenPicker) {
+    calendarBtn.addEventListener("click", () => {
+      if (targetDateInput.disabled) return;
+      hiddenPicker.showPicker();
+    });
+
+    hiddenPicker.addEventListener("change", () => {
+      if (hiddenPicker.value) {
+        targetDateInput.value = formatDeadline(hiddenPicker.value);
+      }
+    });
+  }
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initAnalysisPage);
+} else {
+  initAnalysisPage();
 }

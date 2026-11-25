@@ -93,11 +93,12 @@ function switchExercise(newName) {
 
 let isEditing = false;
 let autoSaveTimeout = null;
+let saveIndicatorTimeout = null;
 
 function initNotes() {
   const allNotes = loadNotes();
   const currentNote = allNotes[exerciseName] || "";
-  notesArea.value = currentNote;
+  if (notesArea) notesArea.value = currentNote;
 }
 
 function loadNotes() {
@@ -108,17 +109,20 @@ function loadNotes() {
 }
 
 function saveNotes() {
+  if (!notesArea) return;
   const allNotes = loadNotes();
   allNotes[exerciseName] = notesArea.value;
   localStorage.setItem(NOTES_KEY, JSON.stringify(allNotes));
   triggerSync();
 
-  saveIndicator.textContent = "Saved";
-  saveIndicator.className = "save-indicator visible saved";
-
-  setTimeout(() => {
-    saveIndicator.classList.remove("visible");
-  }, 2000);
+  if (saveIndicator) {
+    saveIndicator.textContent = "Saved";
+    saveIndicator.className = "save-indicator visible saved";
+    if (saveIndicatorTimeout) clearTimeout(saveIndicatorTimeout);
+    saveIndicatorTimeout = setTimeout(() => {
+      saveIndicator.classList.remove("visible");
+    }, 2000);
+  }
 }
 
 editNotesBtn.addEventListener("click", () => {

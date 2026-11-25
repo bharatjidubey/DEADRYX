@@ -23,9 +23,21 @@ function sanitizeGoogleImageUrl(url) {
 /** HTML-encode a string to prevent XSS when used in innerHTML */
 function escapeHtml(str) {
   if (!str || typeof str !== 'string') return '';
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
+  if (typeof window !== 'undefined' && typeof window.escapeHtml === 'function' && window.escapeHtml !== escapeHtml) {
+    return window.escapeHtml(str);
+  }
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function getValidGapiToken() {
+  if (typeof gapi === 'undefined' || !gapi.client || typeof gapi.client.getToken !== 'function') return null;
+  const token = gapi.client.getToken();
+  return (token && token.access_token) ? token : null;
 }
 
 let tokenClient;
@@ -672,7 +684,8 @@ window.uploadMemoriesToDrive = uploadMemoriesToDrive;
  * Download memories from Google Drive that are missing locally.
  */
 async function downloadMemoriesFromDrive() {
-  if (!gapi.client.getToken()) return;
+  const token = getValidGapiToken();
+  if (!token) return;
   if (!window.MemoriesDB) {
     console.warn("MemoriesDB not available yet. Skipping media download.");
     return;
@@ -701,7 +714,7 @@ async function downloadMemoriesFromDrive() {
         const res = await fetch(
           `https://www.googleapis.com/drive/v3/files/${syncEntry.driveFileId}?alt=media`,
           {
-            headers: { 'Authorization': 'Bearer ' + gapi.client.getToken().access_token }
+            headers: { 'Authorization': 'Bearer ' + token.access_token }
           }
         );
 
@@ -791,12 +804,13 @@ async function fetchAndSyncFromDrive() {
 }
 
 /**
- * Internal upload function that doesn't trigger media sync (to avoid infinite loop).
+ * Shared multipart upload helper for appDataFolder sync payload.
  */
-async function uploadToDriveInternal() {
-  if (typeof gapi === 'undefined' || !gapi.client || typeof gapi.client.getToken !== 'function') return;
-  const token = gapi.client.getToken();
-  if (!token || !token.access_token) return;
+async function uploadSyncPayload(isInternal) {
+  const token = getValidGapiToken();
+  if (!token) return;
+
+  if (!isInternal) updateSyncStatus("Uploading...");
 
   try {
     const fileContent = JSON.stringify(getDriveStructuredData(), null, 2);
@@ -811,13 +825,12 @@ async function uploadToDriveInternal() {
       }
     };
 
-    let url = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
-    let method = 'POST';
-
     if (!syncFileId) {
       syncFileId = await findSyncFile();
     }
 
+    let url = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
+    let method = 'POST';
     if (syncFileId) {
       url = `https://www.googleapis.com/upload/drive/v3/files/${syncFileId}?uploadType=multipart`;
       method = 'PATCH';
@@ -830,7 +843,7 @@ async function uploadToDriveInternal() {
     form.append('file', file);
 
     const res = await fetch(url, {
-      method: method,
+      method,
       headers: new Headers({ 'Authorization': 'Bearer ' + token.access_token }),
       body: form
     });
@@ -838,21 +851,46 @@ async function uploadToDriveInternal() {
     if (res.ok) {
       const data = await res.json();
       syncFileId = data.id;
-    } else if (res.status === 404) {
+      if (!isInternal) {
+        updateSyncStatus("Synced: " + new Date().toLocaleTimeString());
+        await uploadMemoriesToDrive();
+      }
+      return;
+    }
+
+    if (res.status === 404) {
       // Remote file was deleted or unmapped, reset ID so subsequent sync re-creates
       syncFileId = null;
+      if (!isInternal) updateSyncStatus("Upload Error");
+    } else if (!isInternal && res.status === 401) {
+      if (typeof gapi !== 'undefined' && gapi.client) gapi.client.setToken(null);
+      localStorage.removeItem("gdrive_access_token");
+      updateSyncStatus("Session Expired - Sign in again");
+      if (typeof showToast === "function") {
+        showToast("Google Drive session expired. Please sign in again to sync.", "warning");
+      }
+    } else if (!isInternal) {
+      const errText = await res.text().catch(() => "");
+      console.error("[Drive Sync] Upload error status:", res.status, errText);
+      updateSyncStatus("Upload Error");
     }
   } catch (err) {
-    console.error("uploadToDriveInternal error:", err);
+    console.error(isInternal ? "uploadToDriveInternal error:" : "[Drive Sync] Perform upload failed:", err);
+    if (!isInternal) updateSyncStatus("Upload Error");
   }
+}
+
+/**
+ * Internal upload function that doesn't trigger media sync (to avoid infinite loop).
+ */
+async function uploadToDriveInternal() {
+  return uploadSyncPayload(true);
 }
 
 let debounceUploadTimeout = null;
 
 async function uploadToDrive() {
-  if (typeof gapi === 'undefined' || !gapi.client || typeof gapi.client.getToken !== 'function') return;
-  const token = gapi.client.getToken();
-  if (!token || !token.access_token) return; // Not logged in
+  if (!getValidGapiToken()) return; // Not logged in
 
   updateSyncStatus("Sync pending...");
 
@@ -866,85 +904,12 @@ async function uploadToDrive() {
 }
 
 async function performUploadToDrive() {
-  if (typeof gapi === 'undefined' || !gapi.client || typeof gapi.client.getToken !== 'function') return;
-  const token = gapi.client.getToken();
-  if (!token || !token.access_token) return;
-
-  updateSyncStatus("Uploading...");
-  try {
-    const fileContent = JSON.stringify(getDriveStructuredData(), null, 2);
-    const file = new Blob([fileContent], { type: 'application/json' });
-    const metadata = {
-      name: SYNC_FILENAME,
-      mimeType: 'application/json',
-      description: 'DEADRYX Encrypted Workout & Split Cloud Sync Data',
-      appProperties: {
-        app: 'DEADRYX',
-        schemaVersion: '2'
-      }
-    };
-
-    let url = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
-    let method = 'POST';
-
-    if (!syncFileId) {
-      syncFileId = await findSyncFile();
-    }
-
-    if (syncFileId) {
-      url = `https://www.googleapis.com/upload/drive/v3/files/${syncFileId}?uploadType=multipart`;
-      method = 'PATCH';
-    } else {
-      metadata.parents = ['appDataFolder'];
-    }
-
-    const form = new FormData();
-    form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-    form.append('file', file);
-
-    const res = await fetch(url, {
-      method: method,
-      headers: new Headers({ 'Authorization': 'Bearer ' + token.access_token }),
-      body: form
-    });
-
-    if (res.ok) {
-      const data = await res.json();
-      syncFileId = data.id;
-      updateSyncStatus("Synced: " + new Date().toLocaleTimeString());
-
-      // Also upload any un-synced memories
-      await uploadMemoriesToDrive();
-    } else {
-      if (res.status === 401) {
-        if (typeof gapi !== 'undefined' && gapi.client) gapi.client.setToken(null);
-        localStorage.removeItem("gdrive_access_token");
-        updateSyncStatus("Session Expired - Sign in again");
-        if (typeof showToast === "function") {
-          showToast("Google Drive session expired. Please sign in again to sync.", "warning");
-        }
-      } else if (res.status === 404) {
-        syncFileId = null;
-        updateSyncStatus("Upload Error");
-      } else {
-        const errText = await res.text().catch(() => "");
-        console.error("[Drive Sync] Upload error status:", res.status, errText);
-        updateSyncStatus("Upload Error");
-      }
-    }
-  } catch (err) {
-    console.error("[Drive Sync] Perform upload failed:", err);
-    updateSyncStatus("Upload Error");
-  }
+  return uploadSyncPayload(false);
 }
-
-// ================== INITIALIZATION ==================
-// initSidebarProfileFromLocalStorage() is already called at line 271 via DOMContentLoaded
-// No duplicate initialization needed here.
 
 // ================== AUTO-SYNC ON RECONNECT ==================
 window.addEventListener('online', () => {
-  if (localStorage.getItem("gdrive_access_token") && gapi && gapi.client && gapi.client.getToken()) {
+  if (localStorage.getItem("gdrive_access_token") && getValidGapiToken()) {
     console.log("Internet reconnected. Syncing to Drive...");
     fetchAndSyncFromDrive();
   }

@@ -215,12 +215,11 @@ function renderTodayCard() {
 function renderSidebarSplit() {
   const list = document.getElementById("sidebarSplitList");
   if (!list) return;
-  list.innerHTML = "";
-  workoutPlan.forEach(config => {
-    let muscleStr = config.muscles.length === 0 || config.muscles.includes("Rest") ? "Rest" : config.muscles.join(" + ");
-    let shortDay = config.day.substr(0, 3);
-    list.innerHTML += `<li><strong>${shortDay}</strong><span>${muscleStr}</span></li>`;
-  });
+  list.innerHTML = workoutPlan.map(config => {
+    const muscleStr = config.muscles.length === 0 || config.muscles.includes("Rest") ? "Rest" : config.muscles.join(" + ");
+    const shortDay = config.day.substring(0, 3);
+    return `<li><strong>${shortDay}</strong><span>${muscleStr}</span></li>`;
+  }).join("");
 }
 
 function renderCalendar() {
@@ -248,43 +247,36 @@ function renderCalendar() {
  * Matches exercises strictly by name (case-insensitive & trimmed) across ANY day of the week,
  * so exercises appearing on multiple days (e.g. Lat Pulldown on Tuesday & Friday) seamlessly interconnect.
  */
-function getMostRecentPreviousLift(exerciseName, setNumber, beforeDateStr) {
+function getMostRecentPreviousLift(exerciseName, setNumber, beforeDateStr, sortedDatesDesc) {
   if (!historicalLog || !exerciseName) return null;
   const cleanTarget = exerciseName.trim().toLowerCase();
+  const dates = sortedDatesDesc || Object.keys(historicalLog).sort().reverse();
 
-  const validDates = Object.keys(historicalLog)
-    .filter(d => {
-      if (beforeDateStr && d >= beforeDateStr) return false;
-      const dayLog = historicalLog[d];
-      if (!dayLog) return false;
-      let matchingKey = dayLog[exerciseName] ? exerciseName : null;
-      if (!matchingKey) {
-        matchingKey = Object.keys(dayLog).find(k => k.trim().toLowerCase() === cleanTarget);
-      }
-      return matchingKey && dayLog[matchingKey] && dayLog[matchingKey][setNumber];
-    })
-    .sort()
-    .reverse();
+  for (let i = 0; i < dates.length; i++) {
+    const d = dates[i];
+    if (beforeDateStr && d >= beforeDateStr) continue;
+    const dayLog = historicalLog[d];
+    if (!dayLog) continue;
 
-  if (validDates.length > 0) {
-    const lastDate = validDates[0];
-    const dayLog = historicalLog[lastDate];
     let matchingKey = dayLog[exerciseName] ? exerciseName : null;
     if (!matchingKey) {
       matchingKey = Object.keys(dayLog).find(k => k.trim().toLowerCase() === cleanTarget);
     }
-    const entry = matchingKey ? dayLog[matchingKey][setNumber] : null;
-    if (entry && (entry.weight !== "0" || entry.reps !== "0")) {
-      const parts = lastDate.split("-");
+    const entry = matchingKey && dayLog[matchingKey] ? dayLog[matchingKey][setNumber] : null;
+    if (!entry) continue;
+
+    if (entry.weight !== "0" || entry.reps !== "0") {
+      const parts = d.split("-");
       const dObj = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
       const dateLabel = dObj.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
       return {
         weight: entry.weight,
         reps: entry.reps,
-        dateStamp: lastDate,
+        dateStamp: d,
         dateLabel: dateLabel
       };
     }
+    return null;
   }
   return null;
 }
@@ -318,6 +310,7 @@ function renderWorkoutDay() {
   const TEN_MINUTES_MS = 10 * 60 * 1000;
 
   const cardFragment = document.createDocumentFragment();
+  const sortedDatesDesc = Object.keys(historicalLog).sort().reverse();
 
   dayExercises.forEach((exercise) => {
     const card = document.createElement("article");
@@ -339,7 +332,7 @@ function renderWorkoutDay() {
       // 1. Determine Previous Data by querying historicalLog for most recent past lift
       // If today is active, query strictly before today; if inspecting another day, show most recent lift up to today
       const cutoffDate = isTodaySelected ? todayStr : null;
-      const prevLift = getMostRecentPreviousLift(exercise.name, setNumber, cutoffDate);
+      const prevLift = getMostRecentPreviousLift(exercise.name, setNumber, cutoffDate, sortedDatesDesc);
       if (prevLift) {
         previousText = `${prevLift.weight} kg × ${prevLift.reps} reps (${prevLift.dateLabel})`;
       }
@@ -590,6 +583,7 @@ function saveWorkout() {
   const prsDetected = [];
   const saveTime = Date.now();
   const todayStr = new Date().toISOString().split("T")[0];
+  const sortedDatesDesc = Object.keys(historicalLog).sort().reverse();
 
   setRows.forEach((row) => {
     const weightInput = row.querySelector(".js-weight-input");
@@ -617,7 +611,7 @@ function saveWorkout() {
     }
 
     let currentLog = workoutHistory[dayConfig.day][exerciseName][setNumber];
-    const prevLift = getMostRecentPreviousLift(exerciseName, setNumber, todayStr);
+    const prevLift = getMostRecentPreviousLift(exerciseName, setNumber, todayStr, sortedDatesDesc);
     let prevW = prevLift ? prevLift.weight : (currentLog?.prevWeight || currentLog?.weight || null);
     let prevR = prevLift ? prevLift.reps : (currentLog?.prevReps || currentLog?.reps || null);
 
@@ -746,7 +740,6 @@ const openAddExerciseBtn = document.getElementById("openAddExerciseBtn");
 const cancelAddExerciseBtn = document.getElementById("cancelAddExerciseBtn");
 const confirmAddExerciseBtn = document.getElementById("confirmAddExerciseBtn");
 const modalMuscleSelect = document.getElementById("modalMuscleSelect");
-const modalExercisesSection = document.getElementById("modalExercisesSection");
 const exerciseRowsContainer = document.getElementById("exerciseRowsContainer");
 
 // New input references for adding new exercises in Edit Log
@@ -1221,11 +1214,10 @@ const editSplitDays = document.getElementById("editSplitDays");
 
 if (openEditSplitBtn && editSplitModal) {
   openEditSplitBtn.addEventListener("click", () => {
-    editSplitDays.innerHTML = "";
     const allMuscles = ["Chest", "Biceps", "Shoulders", "Legs", "Back", "Triceps", "Abs"];
 
-    workoutPlan.forEach((config, index) => {
-      let checkboxesHTML = allMuscles.map(m => {
+    editSplitDays.innerHTML = workoutPlan.map((config, index) => {
+      const checkboxesHTML = allMuscles.map(m => {
         const isChecked = config.muscles.includes(m) ? "checked" : "";
         return `
           <label class="muscle-chip-label">
@@ -1235,7 +1227,7 @@ if (openEditSplitBtn && editSplitModal) {
         `;
       }).join('');
 
-      editSplitDays.innerHTML += `
+      return `
         <div class="split-day-row" data-day-index="${index}">
           <strong>${config.day}</strong>
           <div class="muscle-checkboxes" style="margin-top: 0;">
@@ -1243,7 +1235,7 @@ if (openEditSplitBtn && editSplitModal) {
           </div>
         </div>
       `;
-    });
+    }).join('');
 
     editSplitModal.classList.add("active");
   });
@@ -1362,10 +1354,14 @@ function showTooltip(e, cell) {
   coolTooltip.querySelector(".tt-details").textContent = `${activity} exercises`;
 
   const rect = cell.getBoundingClientRect();
-  const ttWidth = 110;
-  coolTooltip.style.left = `${rect.left + window.scrollX - (ttWidth / 2) + (rect.width / 2)}px`;
-  coolTooltip.style.top = `${rect.top + window.scrollY - 65}px`;
-  coolTooltip.classList.add("visible");
+  if (typeof window.positionFloatingTooltip === "function") {
+    window.positionFloatingTooltip(coolTooltip, rect.left + (rect.width / 2), rect.top, 8);
+  } else {
+    const ttWidth = 110;
+    coolTooltip.style.left = `${rect.left - (ttWidth / 2) + (rect.width / 2)}px`;
+    coolTooltip.style.top = `${rect.top - 65}px`;
+    coolTooltip.classList.add("visible");
+  }
 }
 
 function hideTooltip() {
@@ -1493,6 +1489,42 @@ async function processBackupFile(file) {
   if (importFile) importFile.value = "";
 }
 
+// Shared helpers for drag-and-drop file targets and JSON field normalization
+function wireFileDropzone(elem, onFileDrop) {
+  if (!elem) return;
+  ["dragenter", "dragover"].forEach(evtName => {
+    elem.addEventListener(evtName, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+      elem.classList.add("dragover");
+    });
+  });
+
+  elem.addEventListener("dragleave", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.relatedTarget && elem.contains(e.relatedTarget)) return;
+    elem.classList.remove("dragover");
+  });
+
+  elem.addEventListener("drop", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    elem.classList.remove("dragover");
+    const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (file) onFileDrop(file);
+  });
+}
+
+function parseJsonValue(val, fallback) {
+  if (val === undefined || val === null) return fallback;
+  if (typeof val === "string") {
+    try { return JSON.parse(val) || fallback; } catch { return fallback; }
+  }
+  return val || fallback;
+}
+
 if (importBtn && importFile) {
   importBtn.addEventListener("click", () => importFile.click());
   importFile.addEventListener("change", (e) => {
@@ -1503,39 +1535,7 @@ if (importBtn && importFile) {
 
   // Enable drag-and-drop directly onto Import button and backup area
   const backupZone = importBtn.closest(".backup-actions") || importBtn;
-  [importBtn, backupZone].forEach(elem => {
-    if (!elem) return;
-    elem.addEventListener("dragenter", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
-      elem.classList.add("dragover");
-    });
-
-    elem.addEventListener("dragover", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
-      elem.classList.add("dragover");
-    });
-
-    elem.addEventListener("dragleave", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (e.relatedTarget && elem.contains(e.relatedTarget)) return;
-      elem.classList.remove("dragover");
-    });
-
-    elem.addEventListener("drop", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      elem.classList.remove("dragover");
-      const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-      if (file) {
-        processBackupFile(file);
-      }
-    });
-  });
+  [importBtn, backupZone].forEach(elem => wireFileDropzone(elem, processBackupFile));
 }
 
 // ============ AI WORKOUT PLAN MERGE IMPORT ============
@@ -1688,15 +1688,15 @@ function mergeAIWorkoutPlan(data) {
 
   // 3b. Merge Workout History & Logs if present
   const fileHist = data["deadryx-historical-log-v1"] || data.historicalLog;
-  if (fileHist && typeof fileHist === "object") {
-    const parsedHist = typeof fileHist === "string" ? JSON.parse(fileHist) : fileHist;
+  if (fileHist) {
+    const parsedHist = parseJsonValue(fileHist, {});
     historicalLog = { ...historicalLog, ...parsedHist };
     localStorage.setItem(HISTORICAL_KEY, JSON.stringify(historicalLog));
   }
 
   const fileWork = data["deadryx-workout-history-v1"] || data.workoutHistory;
-  if (fileWork && typeof fileWork === "object") {
-    const parsedWork = typeof fileWork === "string" ? JSON.parse(fileWork) : fileWork;
+  if (fileWork) {
+    const parsedWork = parseJsonValue(fileWork, {});
     for (const day in parsedWork) {
       if (!workoutHistory[day]) workoutHistory[day] = {};
       workoutHistory[day] = { ...workoutHistory[day], ...parsedWork[day] };
@@ -1705,17 +1705,17 @@ function mergeAIWorkoutPlan(data) {
   }
 
   const fileAtt = data["deadryx-attendance-v1"] || data.attendance;
-  if (fileAtt && typeof fileAtt === "object") {
-    const parsedAtt = typeof fileAtt === "string" ? JSON.parse(fileAtt) : fileAtt;
+  if (fileAtt) {
+    const parsedAtt = parseJsonValue(fileAtt, {});
     attendanceHistory = { ...attendanceHistory, ...parsedAtt };
     localStorage.setItem(ATTENDANCE_KEY, JSON.stringify(attendanceHistory));
   }
 
   const filePRs = data["deadryx-pr-records-v1"] || data.prRecords;
-  if (filePRs && typeof filePRs === "object") {
+  if (filePRs) {
     try {
       const existingPRs = JSON.parse(localStorage.getItem("deadryx-pr-records-v1")) || {};
-      const parsedPRs = typeof filePRs === "string" ? JSON.parse(filePRs) : filePRs;
+      const parsedPRs = parseJsonValue(filePRs, {});
       localStorage.setItem("deadryx-pr-records-v1", JSON.stringify({ ...existingPRs, ...parsedPRs }));
     } catch (e) {}
   }
@@ -1826,7 +1826,6 @@ const copyBtnText = document.getElementById("copyBtnText");
 
 const aiDropzone = document.getElementById("aiDropzone");
 const aiPlanFileInput = document.getElementById("aiPlanFileInput");
-const aiDropzoneText = document.getElementById("aiDropzoneText");
 const aiFileSelectedNotice = document.getElementById("aiFileSelectedNotice");
 const aiSelectedFileName = document.getElementById("aiSelectedFileName");
 const aiClearFileBtn = document.getElementById("aiClearFileBtn");
@@ -1910,37 +1909,7 @@ window.addEventListener("drop", (e) => e.preventDefault(), false);
 // Dropzone & File Handling
 if (aiDropzone && aiPlanFileInput) {
   aiDropzone.addEventListener("click", () => aiPlanFileInput.click());
-
-  aiDropzone.addEventListener("dragenter", (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
-    aiDropzone.classList.add("dragover");
-  });
-
-  aiDropzone.addEventListener("dragover", (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
-    aiDropzone.classList.add("dragover");
-  });
-
-  aiDropzone.addEventListener("dragleave", (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.relatedTarget && aiDropzone.contains(e.relatedTarget)) return;
-    aiDropzone.classList.remove("dragover");
-  });
-
-  aiDropzone.addEventListener("drop", (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    aiDropzone.classList.remove("dragover");
-    const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-    if (file) {
-      handleUploadedAIPlanFile(file);
-    }
-  });
+  wireFileDropzone(aiDropzone, handleUploadedAIPlanFile);
 
   // Also support dropping anywhere on modal content while modal is open
   const aiModalContent = aiPlanModal?.querySelector(".ai-modal-content");
@@ -2039,9 +2008,9 @@ function resetAndApplyAIWorkoutPlan(data) {
   const fileNotes = data["deadryx-notes-v1"] || data.notes;
 
   if (fileWorkoutHistory || fileHistoricalLog) {
-    workoutHistory = (typeof fileWorkoutHistory === "string" ? JSON.parse(fileWorkoutHistory) : fileWorkoutHistory) || {};
-    historicalLog = (typeof fileHistoricalLog === "string" ? JSON.parse(fileHistoricalLog) : fileHistoricalLog) || {};
-    attendanceHistory = (typeof fileAttendance === "string" ? JSON.parse(fileAttendance) : fileAttendance) || {};
+    workoutHistory = parseJsonValue(fileWorkoutHistory, {});
+    historicalLog = parseJsonValue(fileHistoricalLog, {});
+    attendanceHistory = parseJsonValue(fileAttendance, {});
     customExercises = [];
     hiddenExercises = [];
     exerciseOrder = {};
@@ -2287,8 +2256,10 @@ const QUOTES = [
   // Initial quote
   showQuote(currentIndex);
 
-  // Cycle every 21 seconds
-  setInterval(cycleQuote, INTERVAL);
+  // Cycle every 21 seconds (pause animations while tab is backgrounded)
+  setInterval(() => {
+    if (!document.hidden) cycleQuote();
+  }, INTERVAL);
 })();
 
 // Settings Dropdown Modal Toggle

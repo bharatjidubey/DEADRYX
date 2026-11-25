@@ -1682,7 +1682,8 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
 
 /* Custom Tooltip */
 .cool-tooltip {
-  position: absolute;
+  position: fixed;
+  margin: 0;
   background: rgba(11, 15, 22, 0.95);
   border: 1px solid rgba(77, 163, 255, 0.3);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
@@ -1694,9 +1695,9 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
   font-weight: 600;
   pointer-events: none;
   opacity: 0;
-  transform: translateY(10px) scale(0.95);
-  transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-  z-index: 1000;
+  visibility: hidden;
+  transition: opacity 0.16s ease, visibility 0.16s ease;
+  z-index: 9998;
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
@@ -1705,7 +1706,7 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
 
 .cool-tooltip.visible {
   opacity: 1;
-  transform: translateY(0) scale(1);
+  visibility: visible;
 }
 
 .cool-tooltip .tt-date {
@@ -1718,6 +1719,87 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
 
 .cool-tooltip .tt-details {
   color: var(--text);
+}
+
+/* Universal Graph Floating Tooltip (matching reference image) */
+.graph-floating-tooltip {
+  position: fixed;
+  margin: 0;
+  top: 0;
+  left: 0;
+  z-index: 9999;
+  pointer-events: none;
+  background: rgba(14, 20, 31, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.65), 0 4px 12px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 8px;
+  padding: 0.6rem 0.9rem;
+  font-family: 'Inter', -apple-system, sans-serif;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.14s ease, visibility 0.14s ease;
+  min-width: 140px;
+  box-sizing: border-box;
+}
+
+:root[data-theme="light"] .graph-floating-tooltip {
+  background: rgba(255, 255, 255, 0.98);
+  border-color: rgba(15, 23, 42, 0.16);
+  box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.18), 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.graph-floating-tooltip.visible {
+  opacity: 1;
+  visibility: visible;
+}
+
+.graph-floating-tooltip .tt-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 1.25rem;
+  row-gap: 0.35rem;
+  align-items: center;
+  transform: translateY(3px);
+  transition: transform 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.graph-floating-tooltip.visible .tt-grid {
+  transform: translateY(0);
+}
+
+.graph-floating-tooltip .tt-label {
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+:root[data-theme="light"] .graph-floating-tooltip .tt-label {
+  color: #64748b;
+}
+
+.graph-floating-tooltip .tt-value {
+  color: var(--text);
+  font-weight: 700;
+  font-size: 0.82rem;
+  text-align: right;
+  white-space: nowrap;
+}
+
+:root[data-theme="light"] .graph-floating-tooltip .tt-value {
+  color: #0f172a;
+}
+
+.graph-floating-tooltip .tt-value.accent {
+  color: var(--green);
+}
+
+:root[data-theme="light"] .graph-floating-tooltip .tt-value.accent {
+  color: #059669;
 }
 
 /* Mobile Sidebar Drawer Overrides */
